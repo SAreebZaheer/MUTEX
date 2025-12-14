@@ -11,8 +11,12 @@ KDIR := /lib/modules/$(shell uname -r)/build
 # Current directory
 PWD := $(shell pwd)
 
+# Use system's default gcc
+export CC := gcc
+
 # Compiler flags
 ccflags-y := -Wall -Wextra
+CFLAGS_REMOVE_kproxy.o := -ftrivial-auto-var-init=zero
 
 # Default target - build the module
 all:
