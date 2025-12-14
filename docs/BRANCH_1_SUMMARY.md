@@ -16,15 +16,15 @@
 
 ## Deliverables
 
-### 1. Kernel Module Source (`src/module/mutex.c`)
+### 1. Kernel Module Source (`src/module/kproxy.c`)
 - **Lines of Code:** 60
 - **Features:**
-  - Module initialization function (`mutex_module_init`)
-  - Module cleanup function (`mutex_module_exit`)
+  - Module initialization function (`kproxy_module_init`)
+  - Module cleanup function (`kproxy_module_exit`)
   - Proper module metadata:
     - `MODULE_LICENSE("GPL")`
     - `MODULE_AUTHOR("Syed Areeb Zaheer, Azeem, Hamza Bin Aamir")`
-    - `MODULE_DESCRIPTION("MUTEX - Kernel-level proxy service module")`
+    - `MODULE_DESCRIPTION("KPROXY - Kernel-level proxy service module for MUTEX project")`
     - `MODULE_VERSION("0.1.0")`
   - Kernel logging using `pr_info()`
   - Error handling structure (return codes)
@@ -96,16 +96,16 @@
 ### Kernel Messages
 **On Load:**
 ```
-MUTEX: Initializing kernel module
-MUTEX: Version 0.1.0
-MUTEX: Authors: Syed Areeb Zaheer, Azeem, Hamza Bin Aamir
-MUTEX: Module loaded successfully
+KPROXY: Initializing kernel module
+KPROXY: Version 0.1.0
+KPROXY: Authors: Syed Areeb Zaheer, Azeem, Hamza Bin Aamir
+KPROXY: Module loaded successfully
 ```
 
 **On Unload:**
 ```
-MUTEX: Cleaning up module
-MUTEX: Module unloaded successfully
+KPROXY: Cleaning up module
+KPROXY: Module unloaded successfully
 ```
 
 ## Git Commits
@@ -157,13 +157,14 @@ The next branch will be `feature/syscall-registration`:
 
 ### Challenges Encountered
 1. **Name Conflict:** Initial function names `mutex_init` and `mutex_exit` conflicted with kernel's `mutex.h` header macros
-   - **Solution:** Renamed to `mutex_module_init` and `mutex_module_exit`
+   - **Solution:** Renamed to `kproxy_module_init` and `kproxy_module_exit`, and renamed entire module from `mutex` to `kproxy`
 
 2. **Kernel Headers:** Required specific kernel headers for the running kernel version
    - **Solution:** Documented in prerequisites and README
 
 ### Best Practices Applied
-- Prefixed all functions/symbols with `mutex_` to avoid namespace collisions
+- Renamed module from `mutex` to `kproxy` to avoid namespace collisions with kernel headers
+- Prefixed all functions/symbols with `kproxy_` for clarity
 - Used `pr_*` logging functions instead of raw `printk`
 - Implemented proper `__init` and `__exit` section annotations
 - Created comprehensive documentation from the start

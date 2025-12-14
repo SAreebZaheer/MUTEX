@@ -1,9 +1,10 @@
 #!/bin/bash
 #
-# MUTEX Module Testing Script
+# KPROXY Module Testing Script
+# Part of the MUTEX Project
 # Authors: Syed Areeb Zaheer, Azeem, Hamza Bin Aamir
 #
-# This script automates the testing of the MUTEX kernel module
+# This script automates the testing of the KPROXY kernel module
 
 set -e
 
@@ -14,9 +15,9 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 # Module name
-MODULE_NAME="mutex"
+MODULE_NAME="kproxy"
 
-echo -e "${YELLOW}=== MUTEX Kernel Module Test Script ===${NC}"
+echo -e "${YELLOW}=== KPROXY Kernel Module Test Script ===${NC}"
 
 # Check if we're running as root
 if [ "$EUID" -ne 0 ]; then 
@@ -64,7 +65,7 @@ fi
 
 # Show kernel messages
 echo -e "\n${YELLOW}Kernel messages (loading):${NC}"
-dmesg | grep MUTEX | tail -5
+dmesg | grep KPROXY | tail -5
 
 # Wait a bit
 sleep 1
@@ -88,7 +89,7 @@ fi
 
 # Show kernel messages
 echo -e "\n${YELLOW}Kernel messages (unloading):${NC}"
-dmesg | grep MUTEX | tail -2
+dmesg | grep KPROXY | tail -2
 
 # Summary
 echo -e "\n${GREEN}=== All tests passed! ===${NC}"

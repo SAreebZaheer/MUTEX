@@ -44,10 +44,10 @@ make
 sudo ./test_module.sh
 
 # Or manually load/unload
-sudo insmod mutex.ko
-lsmod | grep mutex
+sudo insmod kproxy.ko
+lsmod | grep kproxy
 sudo dmesg | tail -10
-sudo rmmod mutex
+sudo rmmod kproxy
 ```
 
 ## Project Structure
@@ -60,7 +60,7 @@ MUTEX/
 │   └── COMMIT_CONVENTIONS.md
 ├── src/                    # Source code
 │   ├── module/            # Kernel module
-│   │   ├── mutex.c        # Main module implementation
+│   │   ├── kproxy.c       # Main module implementation
 │   │   ├── Makefile       # Build configuration
 │   │   └── test_module.sh # Automated testing
 │   └── README.md          # Source documentation

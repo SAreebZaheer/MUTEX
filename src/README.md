@@ -7,8 +7,8 @@ This directory contains the source code for the MUTEX kernel module and associat
 ```
 src/
 ├── module/          # Kernel module source code
-│   ├── mutex.c     # Main module implementation
-│   └── Makefile    # Build configuration
+│   ├── kproxy.c     # Main module implementation
+│   └── Makefile     # Build configuration
 ├── userspace/       # Userspace utilities (to be implemented)
 └── tests/           # Test suite (to be implemented)
 ```
@@ -52,17 +52,17 @@ make clean
 sudo make load
 
 # Or manually
-sudo insmod mutex.ko
+sudo insmod kproxy.ko
 ```
 
 ### Verify the Module is Loaded
 
 ```bash
 # Check loaded modules
-lsmod | grep mutex
+lsmod | grep kproxy
 
 # Check module information
-modinfo mutex.ko
+modinfo kproxy.ko
 
 # View kernel messages
 dmesg | tail -20
@@ -75,12 +75,13 @@ dmesg | tail -20
 sudo make unload
 
 # Or manually
-sudo rmmod mutex
+sudo rmmod kproxy
 ```
 
 ## Module Information
 
-- **Name:** MUTEX (Multi-User Threaded Exchange Xfer)
+- **Name:** KPROXY (Kernel Proxy)
+- **Project:** MUTEX (Multi-User Threaded Exchange Xfer)
 - **Version:** 0.1.0
 - **License:** GPL
 - **Authors:** Syed Areeb Zaheer, Azeem, Hamza Bin Aamir
@@ -114,7 +115,7 @@ sudo apt-get install linux-headers-$(uname -r)
 **Error:** `Permission denied`
 ```bash
 # Use sudo for loading/unloading
-sudo insmod mutex.ko
+sudo insmod kproxy.ko
 ```
 
 ### Module won't load
