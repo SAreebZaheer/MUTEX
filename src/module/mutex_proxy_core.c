@@ -214,6 +214,35 @@ SYSCALL_DEFINE1(mutex_proxy_create, unsigned int, flags)
 }
 
 /**
+ * mutex_proxy_release - Release handler for proxy file descriptor
+ * @inode: Inode associated with the file
+ * @file: File structure being released
+ *
+ * Called when the file descriptor is closed. This disables the proxy
+ * and releases the reference to the context, which will be freed when
+ * the reference count reaches zero.
+ *
+ * Return: 0 on success
+ */
+static int mutex_proxy_release(struct inode *inode, struct file *file)
+{
+	struct mutex_proxy_context *ctx = file->private_data;
+
+	if (!ctx)
+		return 0;
+
+	pr_debug("mutex_proxy: releasing fd for PID %d\n", ctx->owner_pid);
+
+	/* Disable proxy when fd is closed */
+	atomic_set(&ctx->enabled, 0);
+
+	/* Release our reference to the context */
+	mutex_proxy_ctx_put(ctx);
+
+	return 0;
+}
+
+/**
  * file_operations structure for proxy file descriptor
  *
  * This will be incrementally implemented with:
@@ -225,5 +254,6 @@ SYSCALL_DEFINE1(mutex_proxy_create, unsigned int, flags)
  */
 static const struct file_operations mutex_proxy_fops = {
 	.owner		= THIS_MODULE,
+	.release	= mutex_proxy_release,
 	.llseek		= noop_llseek,
 };
