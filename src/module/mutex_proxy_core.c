@@ -16,7 +16,13 @@
 #include <linux/kernel.h>
 #include <linux/slab.h>
 #include <linux/cred.h>
+#include <linux/anon_inodes.h>
+#include <linux/file.h>
+#include <linux/poll.h>
 #include "mutex_proxy.h"
+
+/* Forward declaration of file_operations - will be implemented incrementally */
+static const struct file_operations mutex_proxy_fops;
 
 /**
  * mutex_proxy_ctx_alloc - Allocate and initialize a new proxy context
@@ -135,6 +141,47 @@ void mutex_proxy_ctx_put(struct mutex_proxy_context *ctx)
 }
 
 /**
+ * mutex_proxy_create_fd - Create file descriptor for proxy context
+ * @ctx: Proxy context to associate with the fd
+ * @flags: Creation flags (CLOEXEC, NONBLOCK, GLOBAL)
+ *
+ * Creates an anonymous inode file descriptor and associates it with the
+ * given proxy context. This follows the same pattern as eventfd(), timerfd(),
+ * and signalfd().
+ *
+ * The fd will appear as "[mutex_proxy]" in /proc/self/fd/.
+ *
+ * Return: File descriptor number on success, negative error code on failure
+ */
+static int mutex_proxy_create_fd(struct mutex_proxy_context *ctx,
+				  unsigned int flags)
+{
+	int fd;
+	int o_flags = O_RDWR;
+
+	/* Convert proxy flags to file open flags */
+	if (flags & MUTEX_PROXY_CLOEXEC)
+		o_flags |= O_CLOEXEC;
+	if (flags & MUTEX_PROXY_NONBLOCK)
+		o_flags |= O_NONBLOCK;
+
+	/*
+	 * Create anonymous inode with our file_operations.
+	 * The name "[mutex_proxy]" will be visible in /proc/PID/fd/
+	 */
+	fd = anon_inode_getfd("[mutex_proxy]", &mutex_proxy_fops,
+			      ctx, o_flags);
+	if (fd < 0) {
+		pr_err("mutex_proxy: failed to create fd: %d\n", fd);
+		return fd;
+	}
+
+	pr_debug("mutex_proxy: created fd %d for PID %d\n", fd, ctx->owner_pid);
+
+	return fd;
+}
+
+/**
  * sys_mutex_proxy_create - Create a new proxy control file descriptor
  * @flags: Creation flags (MUTEX_PROXY_CLOEXEC, MUTEX_PROXY_NONBLOCK, etc.)
  *
@@ -165,3 +212,18 @@ SYSCALL_DEFINE1(mutex_proxy_create, unsigned int, flags)
 
 	return -ENOSYS;
 }
+
+/**
+ * file_operations structure for proxy file descriptor
+ *
+ * This will be incrementally implemented with:
+ * - release: Close/cleanup operations
+ * - read: Return statistics
+ * - write: Update configuration
+ * - unlocked_ioctl: Control operations
+ * - poll: Event notifications
+ */
+static const struct file_operations mutex_proxy_fops = {
+	.owner		= THIS_MODULE,
+	.llseek		= noop_llseek,
+};
