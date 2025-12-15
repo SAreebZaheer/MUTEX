@@ -188,46 +188,10 @@ static int mutex_proxy_create_fd(struct mutex_proxy_context *ctx,
 }
 
 /*
- * NOTE: The actual syscall implementation (SYSCALL_DEFINE1) is meant for
- * integration into the kernel itself, not for loadable modules.
- * When this module is integrated into the kernel source tree, uncomment
- * the syscall definition below.
- *
- * For now, this is a placeholder showing the intended syscall interface.
+ * NOTE: The syscall implementation has been moved to linux/kernel/mutex_proxy.c
+ * This module provides additional functionality that can be loaded dynamically,
+ * while the core syscall is built into the kernel.
  */
-#if 0
-/**
- * sys_mutex_proxy_create - Create a new proxy control file descriptor
- * @flags: Creation flags (MUTEX_PROXY_CLOEXEC, MUTEX_PROXY_NONBLOCK, etc.)
- *
- * This syscall creates a file descriptor that can be used to control
- * kernel-level proxy behavior. It requires CAP_NET_ADMIN capability.
- *
- * Return: File descriptor on success, negative error code on failure
- */
-SYSCALL_DEFINE1(mutex_proxy_create, unsigned int, flags)
-{
-	/* Check for CAP_NET_ADMIN capability */
-	if (!capable(CAP_NET_ADMIN)) {
-		pr_warn("mutex_proxy: Process %d (%s) lacks CAP_NET_ADMIN\n",
-			current->pid, current->comm);
-		return -EPERM;
-	}
-
-	/* Validate flags */
-	if (flags & ~MUTEX_PROXY_ALL_FLAGS) {
-		pr_warn("mutex_proxy: Invalid flags 0x%x from process %d\n",
-			flags, current->pid);
-		return -EINVAL;
-	}
-
-	/* TODO: Implement fd creation */
-	pr_info("mutex_proxy: syscall invoked by process %d (%s) with flags 0x%x\n",
-		current->pid, current->comm, flags);
-
-	return -ENOSYS;
-}
-#endif /* Syscall implementation - for kernel integration */
 
 /**
  * mutex_proxy_read - Read statistics from proxy file descriptor
