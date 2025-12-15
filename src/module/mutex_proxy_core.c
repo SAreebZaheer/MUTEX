@@ -82,6 +82,10 @@ struct mutex_proxy_context *mutex_proxy_ctx_alloc(unsigned int flags)
 	for (i = 0; i < ctx->conn_table_size; i++)
 		INIT_HLIST_HEAD(&ctx->conn_table[i]);
 
+	/* Initialize wait queue for poll() support */
+	init_waitqueue_head(&ctx->wait);
+	ctx->event_count = 0;
+
 	pr_debug("mutex_proxy: allocated context for PID %d (UID %u, GID %u)\n",
 		 ctx->owner_pid, from_kuid(&init_user_ns, ctx->owner_uid),
 		 from_kgid(&init_user_ns, ctx->owner_gid));
@@ -432,6 +436,44 @@ static long mutex_proxy_ioctl(struct file *file, unsigned int cmd,
 }
 
 /**
+ * mutex_proxy_poll - poll handler for proxy file descriptor
+ * @file: File structure for the fd
+ * @wait: poll_table for registration
+ *
+ * Implements poll/select/epoll support for the proxy fd.
+ * Always readable (stats available) and writable (can accept config).
+ * Signals POLLHUP when proxy is disabled.
+ *
+ * Return: Poll event mask
+ */
+static __poll_t mutex_proxy_poll(struct file *file, poll_table *wait)
+{
+	struct mutex_proxy_context *ctx = file->private_data;
+	__poll_t events = 0;
+
+	if (!ctx)
+		return POLLERR;
+
+	/* Register with wait queue */
+	poll_wait(file, &ctx->wait, wait);
+
+	/* Always readable - stats are always available */
+	events |= POLLIN | POLLRDNORM;
+
+	/* Always writable - can always accept configuration */
+	events |= POLLOUT | POLLWRNORM;
+
+	/* Signal hangup if proxy is disabled */
+	if (!atomic_read(&ctx->enabled))
+		events |= POLLHUP;
+
+	pr_debug("mutex_proxy: poll() for PID %d, events=0x%x\n",
+		 ctx->owner_pid, events);
+
+	return events;
+}
+
+/**
  * mutex_proxy_release - Release handler for proxy file descriptor
  * @inode: Inode associated with the file
  * @file: File structure being released
@@ -477,6 +519,7 @@ static const struct file_operations mutex_proxy_fops = {
 	.write			= mutex_proxy_write,
 	.unlocked_ioctl		= mutex_proxy_ioctl,
 	.compat_ioctl		= mutex_proxy_ioctl,
+	.poll			= mutex_proxy_poll,
 	.llseek			= noop_llseek,
 };
 

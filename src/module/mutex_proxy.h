@@ -52,6 +52,10 @@ struct mutex_proxy_context {
 	struct hlist_head *conn_table;
 	unsigned int conn_table_size;
 
+	/* Event notification support */
+	wait_queue_head_t wait;		/* For poll/select/epoll */
+	unsigned int event_count;	/* Event counter */
+
 	struct rcu_head rcu;		/* For RCU-safe destruction */
 	atomic_t refcount;		/* Reference counting */
 };
