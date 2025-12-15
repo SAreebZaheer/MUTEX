@@ -5,6 +5,9 @@
 # Module name
 obj-m += kproxy.o
 
+# Additional object files for the module
+kproxy-objs := mutex_proxy_core.o
+
 # Kernel build directory
 KDIR := /lib/modules/$(shell uname -r)/build
 
@@ -16,7 +19,6 @@ export CC := gcc
 
 # Compiler flags
 ccflags-y := -Wall -Wextra
-CFLAGS_REMOVE_kproxy.o := -ftrivial-auto-var-init=zero
 
 # Default target - build the module
 all:
