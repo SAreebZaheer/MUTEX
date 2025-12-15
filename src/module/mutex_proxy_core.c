@@ -274,6 +274,68 @@ static ssize_t mutex_proxy_read(struct file *file, char __user *buf,
 }
 
 /**
+ * mutex_proxy_write - Write configuration to proxy file descriptor
+ * @file: File structure for the fd
+ * @buf: User buffer containing configuration data
+ * @count: Number of bytes to write
+ * @ppos: File position (unused, always writes to beginning)
+ *
+ * Updates the proxy configuration from userspace. This validates the
+ * configuration (version, proxy type, port range) and atomically updates
+ * the context under spinlock protection.
+ *
+ * Return: Number of bytes written on success, negative error code on failure
+ */
+static ssize_t mutex_proxy_write(struct file *file, const char __user *buf,
+				  size_t count, loff_t *ppos)
+{
+	struct mutex_proxy_context *ctx = file->private_data;
+	struct mutex_proxy_config new_config;
+	unsigned long flags;
+
+	if (!ctx)
+		return -EINVAL;
+
+	/* Only accept writes of exact config structure size */
+	if (count != sizeof(struct mutex_proxy_config))
+		return -EINVAL;
+
+	/* Copy config from userspace */
+	if (copy_from_user(&new_config, buf, sizeof(new_config)))
+		return -EFAULT;
+
+	/* Validate configuration */
+	if (new_config.version != 1) {
+		pr_warn("mutex_proxy: invalid config version %u\n",
+			new_config.version);
+		return -EINVAL;
+	}
+
+	if (new_config.proxy_type < 1 ||
+	    new_config.proxy_type > PROXY_TYPE_MAX) {
+		pr_warn("mutex_proxy: invalid proxy type %u\n",
+			new_config.proxy_type);
+		return -EINVAL;
+	}
+
+	if (new_config.proxy_port == 0 || new_config.proxy_port > 65535) {
+		pr_warn("mutex_proxy: invalid proxy port %u\n",
+			new_config.proxy_port);
+		return -EINVAL;
+	}
+
+	/* Atomically update configuration under lock */
+	spin_lock_irqsave(&ctx->lock, flags);
+	memcpy(&ctx->config, &new_config, sizeof(new_config));
+	spin_unlock_irqrestore(&ctx->lock, flags);
+
+	pr_debug("mutex_proxy: updated config for PID %d (type=%u, port=%u)\n",
+		 ctx->owner_pid, new_config.proxy_type, new_config.proxy_port);
+
+	return sizeof(new_config);
+}
+
+/**
  * mutex_proxy_release - Release handler for proxy file descriptor
  * @inode: Inode associated with the file
  * @file: File structure being released
@@ -316,6 +378,7 @@ static const struct file_operations mutex_proxy_fops = {
 	.owner		= THIS_MODULE,
 	.release	= mutex_proxy_release,
 	.read		= mutex_proxy_read,
+	.write		= mutex_proxy_write,
 	.llseek		= noop_llseek,
 };
 
