@@ -336,6 +336,102 @@ static ssize_t mutex_proxy_write(struct file *file, const char __user *buf,
 }
 
 /**
+ * mutex_proxy_ioctl - ioctl handler for proxy file descriptor
+ * @file: File structure for the fd
+ * @cmd: ioctl command
+ * @arg: ioctl argument
+ *
+ * Provides alternative control interface to read/write operations.
+ * Supports ENABLE/DISABLE, SET_CONFIG/GET_CONFIG, and GET_STATS.
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+static long mutex_proxy_ioctl(struct file *file, unsigned int cmd,
+			       unsigned long arg)
+{
+	struct mutex_proxy_context *ctx = file->private_data;
+	void __user *argp = (void __user *)arg;
+	struct mutex_proxy_config new_config;
+	unsigned long flags;
+	int ret = 0;
+
+	if (!ctx)
+		return -EINVAL;
+
+	switch (cmd) {
+	case MUTEX_PROXY_IOC_ENABLE:
+		atomic_set(&ctx->enabled, 1);
+		pr_info("mutex_proxy: enabled for PID %d\n", ctx->owner_pid);
+		break;
+
+	case MUTEX_PROXY_IOC_DISABLE:
+		atomic_set(&ctx->enabled, 0);
+		pr_info("mutex_proxy: disabled for PID %d\n", ctx->owner_pid);
+		break;
+
+	case MUTEX_PROXY_IOC_SET_CONFIG:
+		/* Copy config from userspace */
+		if (copy_from_user(&new_config, argp, sizeof(new_config)))
+			return -EFAULT;
+
+		/* Validate configuration */
+		if (new_config.version != 1) {
+			pr_warn("mutex_proxy: ioctl: invalid config version %u\n",
+				new_config.version);
+			return -EINVAL;
+		}
+
+		if (new_config.proxy_type < 1 ||
+		    new_config.proxy_type > PROXY_TYPE_MAX) {
+			pr_warn("mutex_proxy: ioctl: invalid proxy type %u\n",
+				new_config.proxy_type);
+			return -EINVAL;
+		}
+
+		if (new_config.proxy_port == 0 || new_config.proxy_port > 65535) {
+			pr_warn("mutex_proxy: ioctl: invalid proxy port %u\n",
+				new_config.proxy_port);
+			return -EINVAL;
+		}
+
+		/* Atomically update configuration */
+		spin_lock_irqsave(&ctx->lock, flags);
+		memcpy(&ctx->config, &new_config, sizeof(new_config));
+		spin_unlock_irqrestore(&ctx->lock, flags);
+
+		pr_debug("mutex_proxy: ioctl: updated config for PID %d\n",
+			 ctx->owner_pid);
+		break;
+
+	case MUTEX_PROXY_IOC_GET_CONFIG:
+		/* Copy config to userspace under lock */
+		spin_lock_irqsave(&ctx->lock, flags);
+		ret = copy_to_user(argp, &ctx->config, sizeof(ctx->config));
+		spin_unlock_irqrestore(&ctx->lock, flags);
+
+		if (ret)
+			return -EFAULT;
+		break;
+
+	case MUTEX_PROXY_IOC_GET_STATS:
+		/* Copy stats to userspace under lock */
+		spin_lock_irqsave(&ctx->lock, flags);
+		ret = copy_to_user(argp, &ctx->stats, sizeof(ctx->stats));
+		spin_unlock_irqrestore(&ctx->lock, flags);
+
+		if (ret)
+			return -EFAULT;
+		break;
+
+	default:
+		pr_warn("mutex_proxy: unknown ioctl command 0x%x\n", cmd);
+		return -ENOTTY;
+	}
+
+	return 0;
+}
+
+/**
  * mutex_proxy_release - Release handler for proxy file descriptor
  * @inode: Inode associated with the file
  * @file: File structure being released
@@ -375,11 +471,13 @@ static int mutex_proxy_release(struct inode *inode, struct file *file)
  * - poll: Event notifications
  */
 static const struct file_operations mutex_proxy_fops = {
-	.owner		= THIS_MODULE,
-	.release	= mutex_proxy_release,
-	.read		= mutex_proxy_read,
-	.write		= mutex_proxy_write,
-	.llseek		= noop_llseek,
+	.owner			= THIS_MODULE,
+	.release		= mutex_proxy_release,
+	.read			= mutex_proxy_read,
+	.write			= mutex_proxy_write,
+	.unlocked_ioctl		= mutex_proxy_ioctl,
+	.compat_ioctl		= mutex_proxy_ioctl,
+	.llseek			= noop_llseek,
 };
 
 /**
