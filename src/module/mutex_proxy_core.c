@@ -214,6 +214,54 @@ SYSCALL_DEFINE1(mutex_proxy_create, unsigned int, flags)
 }
 
 /**
+ * mutex_proxy_read - Read statistics from proxy file descriptor
+ * @file: File structure for the fd
+ * @buf: User buffer to read data into
+ * @count: Number of bytes to read
+ * @ppos: File position (unused, always reads from beginning)
+ *
+ * Returns the current proxy statistics to userspace. This is thread-safe
+ * and uses a spinlock to protect the statistics structure. Supports partial
+ * reads if the buffer is smaller than the statistics structure.
+ *
+ * Return: Number of bytes read on success, negative error code on failure
+ */
+static ssize_t mutex_proxy_read(struct file *file, char __user *buf,
+				 size_t count, loff_t *ppos)
+{
+	struct mutex_proxy_context *ctx = file->private_data;
+	struct mutex_proxy_stats stats;
+	size_t to_copy;
+	unsigned long flags;
+
+	if (!ctx)
+		return -EINVAL;
+
+	/* If already read everything, return EOF */
+	if (*ppos >= sizeof(stats))
+		return 0;
+
+	/* Copy current statistics under lock */
+	spin_lock_irqsave(&ctx->lock, flags);
+	memcpy(&stats, &ctx->stats, sizeof(stats));
+	spin_unlock_irqrestore(&ctx->lock, flags);
+
+	/* Calculate how much to copy */
+	to_copy = min(count, sizeof(stats) - (size_t)*ppos);
+
+	/* Copy to userspace */
+	if (copy_to_user(buf, ((char *)&stats) + *ppos, to_copy))
+		return -EFAULT;
+
+	*ppos += to_copy;
+
+	pr_debug("mutex_proxy: read %zu bytes of statistics for PID %d\n",
+		 to_copy, ctx->owner_pid);
+
+	return to_copy;
+}
+
+/**
  * mutex_proxy_release - Release handler for proxy file descriptor
  * @inode: Inode associated with the file
  * @file: File structure being released
@@ -255,5 +303,6 @@ static int mutex_proxy_release(struct inode *inode, struct file *file)
 static const struct file_operations mutex_proxy_fops = {
 	.owner		= THIS_MODULE,
 	.release	= mutex_proxy_release,
+	.read		= mutex_proxy_read,
 	.llseek		= noop_llseek,
 };
