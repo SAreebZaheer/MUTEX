@@ -25,7 +25,7 @@ Building a loadable kernel module (LKM) for Linux that provides a system call to
 
 ### 2. `feature/syscall-and-fd-operations`
 **Description:** Implement single system call that returns file descriptor for proxy control
-- Research and implement system call table hooking (or alternative methods like syscall wrapper)
+- Add new system call in the linux kernel.
 - Create `mutex_proxy_create()` syscall that returns a file descriptor
 - Implement anonymous inode-based file operations (similar to eventfd, timerfd, signalfd)
 - Define file operations structure (open, read, write, ioctl, poll, release)
