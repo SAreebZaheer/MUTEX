@@ -19,7 +19,9 @@
 #include <linux/anon_inodes.h>
 #include <linux/file.h>
 #include <linux/poll.h>
+#include <linux/module.h>
 #include "mutex_proxy.h"
+#include "mutex_proxy_meta.h"
 
 /* Forward declaration of file_operations - will be implemented incrementally */
 static const struct file_operations mutex_proxy_fops;
@@ -181,6 +183,15 @@ static int mutex_proxy_create_fd(struct mutex_proxy_context *ctx,
 	return fd;
 }
 
+/*
+ * NOTE: The actual syscall implementation (SYSCALL_DEFINE1) is meant for
+ * integration into the kernel itself, not for loadable modules.
+ * When this module is integrated into the kernel source tree, uncomment
+ * the syscall definition below.
+ *
+ * For now, this is a placeholder showing the intended syscall interface.
+ */
+#if 0
 /**
  * sys_mutex_proxy_create - Create a new proxy control file descriptor
  * @flags: Creation flags (MUTEX_PROXY_CLOEXEC, MUTEX_PROXY_NONBLOCK, etc.)
@@ -212,6 +223,7 @@ SYSCALL_DEFINE1(mutex_proxy_create, unsigned int, flags)
 
 	return -ENOSYS;
 }
+#endif /* Syscall implementation - for kernel integration */
 
 /**
  * mutex_proxy_read - Read statistics from proxy file descriptor
@@ -306,3 +318,36 @@ static const struct file_operations mutex_proxy_fops = {
 	.read		= mutex_proxy_read,
 	.llseek		= noop_llseek,
 };
+
+/**
+ * mutex_proxy_init - Module initialization
+ *
+ * Called when the module is loaded. Currently just logs a message.
+ * Future: Register netfilter hooks, initialize global state.
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+static int __init mutex_proxy_init(void)
+{
+	pr_info("mutex_proxy: module loaded\n");
+	return 0;
+}
+
+/**
+ * mutex_proxy_exit - Module cleanup
+ *
+ * Called when the module is unloaded. Cleans up all resources.
+ * All active file descriptors should be closed before unloading.
+ */
+static void __exit mutex_proxy_exit(void)
+{
+	pr_info("mutex_proxy: module unloaded\n");
+}
+
+module_init(mutex_proxy_init);
+module_exit(mutex_proxy_exit);
+
+MODULE_LICENSE(MPX_LICENSE);
+MODULE_AUTHOR(MPX_AUTHOR);
+MODULE_DESCRIPTION(MPX_DESCRIPTION);
+MODULE_VERSION(MPX_VERSION);

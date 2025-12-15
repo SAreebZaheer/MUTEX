@@ -14,7 +14,7 @@
 #include <linux/atomic.h>
 #include <linux/list.h>
 #include <linux/rcupdate.h>
-#include <uapi/linux/mutex_proxy.h>
+#include "../../linux/include/uapi/linux/mutex_proxy.h"
 
 /**
  * struct mutex_proxy_context - Per-fd private data structure
