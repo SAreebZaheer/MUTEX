@@ -20,6 +20,16 @@ MUTEX is a loadable kernel module (LKM) that creates a kernel-level proxy servic
 - Proper logging and error handling
 - Build system and testing scripts
 
+✅ **Branch 2 Complete:** `feature/syscall-registration`
+- Custom system call registration mechanism
+- Syscall table hooking using kprobes
+- CAP_NET_ADMIN capability checking
+- Architecture-specific syscall support (x86_64, i386, ARM64)
+- Userspace test program for syscall validation
+- Input validation and secure parameter passing
+
+🚧 **In Progress:** Branch 3 - `feature/userspace-interface`
+
 ## Quick Start
 
 ### Prerequisites
@@ -43,6 +53,12 @@ make
 # Run automated tests (requires root)
 sudo ./test_module.sh
 
+# Test syscall functionality (Branch 2+)
+gcc -o test_syscall test_syscall.c -Wall
+sudo ./test_syscall enable 192.168.1.100 8080
+sudo ./test_syscall disable 192.168.1.100 8080
+sudo dmesg | grep KPROXY | tail -10
+
 # Or manually load/unload
 sudo insmod kproxy.ko
 lsmod | grep kproxy
@@ -56,11 +72,14 @@ sudo rmmod kproxy
 MUTEX/
 ├── docs/                   # Project documentation
 │   ├── BRANCH_PLAN.md     # Development roadmap
+│   ├── BRANCH_1_SUMMARY.md # Branch 1 completion summary
+│   ├── BRANCH_2_SUMMARY.md # Branch 2 completion summary
 │   ├── PDM-sequence.md    # Project scheduling
 │   └── COMMIT_CONVENTIONS.md
 ├── src/                    # Source code
 │   ├── module/            # Kernel module
 │   │   ├── kproxy.c       # Main module implementation
+│   │   ├── test_syscall.c # Userspace syscall test program
 │   │   ├── Makefile       # Build configuration
 │   │   └── test_module.sh # Automated testing
 │   └── README.md          # Source documentation
@@ -70,15 +89,24 @@ MUTEX/
 
 ## Features
 
-### Implemented (v0.1.0)
+### Implemented (v0.2.0)
 - ✅ Basic LKM structure with init/exit functions
 - ✅ Module metadata and licensing
 - ✅ Kernel logging infrastructure
 - ✅ Build system with Makefile
 - ✅ Automated testing framework
+- ✅ **Custom system call registration**
+- ✅ **Syscall table hooking using kprobes**
+- ✅ **CAP_NET_ADMIN capability checking**
+- ✅ **Architecture-specific support (x86_64, i386, ARM64)**
+- ✅ **Userspace test program**
+- ✅ **Input validation and secure parameter passing**
+
+### In Development
+- 🚧 Userspace interface library
+- 🚧 ioctl interface implementation
 
 ### Planned (See [BRANCH_PLAN.md](docs/BRANCH_PLAN.md))
-- System call registration
 - Netfilter hooks for packet interception
 - SOCKS and HTTP proxy protocol support
 - Transparent proxying

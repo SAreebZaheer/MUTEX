@@ -27,7 +27,7 @@ This document outlines the Precedence Diagramming Method (PDM) for the MUTEX ker
 | Branch ID | Branch Name | Immediate Predecessors | Dependency Type | Duration (weeks) | Float |
 |-----------|-------------|----------------------|-----------------|------------------|-------|
 | B1 | basic-module-structure | - | - | 1 | 0 |
-| B2 | syscall-registration | B1 | FS | 2 | 0 |
+| B2 | syscall-and-fd-operations | B1 | FS | 2.5 | 0 |
 | B3 | userspace-interface | B2 | FS | 2 | 4 |
 | B4 | netfilter-hooks | B2 | FS | 2 | 0 |
 | B5 | proxy-configuration | B2 | FS | 1.5 | 2 |
@@ -56,18 +56,19 @@ This document outlines the Precedence Diagramming Method (PDM) for the MUTEX ker
 
 ## Network Diagram Description
 
-### Phase 1: Foundation (Weeks 1-3)
+### Phase 1: Foundation (Weeks 1-3.5)
 ```
 [B1: Module Structure]
          |
          v
-[B2: Syscall Registration]
-         |
+[B2: mprox_create() syscall → returns fd]
+         |    (anon inode + file_operations)
          +------------+-------------+
          |            |             |
          v            v             v
-   [B3: UI]    [B4: Netfilter] [B5: Proxy Config]
-                     |             |
+   [B3: FD-based] [B4: Netfilter] [B5: Proxy Config]
+   [API library]                  [per-fd via write()]
+                     |
                      +------+------+
                             v
                    [B6: Connection Tracking]
@@ -135,11 +136,11 @@ This document outlines the Precedence Diagramming Method (PDM) for the MUTEX ker
 ### Critical Path:
 **B1 → B2 → B4 → B6 → B7 → B8 → B10 → B13 → B14 → B17 → B19 → B22 → B25**
 
-**Total Duration: 31 weeks** (~7.5 months)
+**Total Duration: 31.5 weeks** (~8 months)
 
 ### Critical Path Activities:
 1. **B1** - basic-module-structure (1 week)
-2. **B2** - syscall-registration (2 weeks)
+2. **B2** - syscall-and-fd-operations (2.5 weeks) - `mprox_create()` syscall returns fd with file_operations
 3. **B4** - netfilter-hooks (2 weeks)
 4. **B6** - connection-tracking (2 weeks)
 5. **B7** - packet-rewriting (2.5 weeks)
@@ -171,13 +172,13 @@ This document outlines the Precedence Diagramming Method (PDM) for the MUTEX ker
 - **B1** - No dependencies, must start first
 
 ### Level 1 (Depends on B1):
-- **B2** - Requires basic module structure
+- **B2** - Requires basic module structure to implement syscall and fd operations
 - **B21** - Can start early but has large float
 
 ### Level 2 (Depends on B2):
-- **B3** - Userspace interface
+- **B3** - Userspace interface (wrapper for syscall, fd-based API)
 - **B4** - Netfilter hooks (CRITICAL)
-- **B5** - Proxy configuration
+- **B5** - Proxy configuration (per-fd via write() operations)
 
 ### Level 3 (Depends on B4 and/or B5):
 - **B6** - Requires both B4 and B5 (CRITICAL)
@@ -226,8 +227,8 @@ This document outlines the Precedence Diagramming Method (PDM) for the MUTEX ker
 ### Week 1:
 - **B1** (Full team focus)
 
-### Weeks 2-3:
-- **B2** (Critical path - priority team)
+### Weeks 2-4 (mid):
+- **B2** (Critical path - priority team: syscall implementation + anon inode + file_operations)
 
 ### Weeks 4-5:
 - **B4** (Critical - Team A)
@@ -380,10 +381,10 @@ If 31 weeks is too long, compress to ~24 weeks by:
 
 ## Milestones and Gates
 
-### Milestone 1: Foundation Complete (Week 3)
+### Milestone 1: Foundation Complete (Week 3.5)
 - **Gates:** B1, B2 complete
-- **Deliverable:** Module loads, syscall registered
-- **Go/No-Go:** Can userspace call kernel module?
+- **Deliverable:** Module loads, `mprox_create()` syscall implemented and returns valid fd
+- **Go/No-Go:** Can userspace call syscall, receive fd, perform read/write/ioctl/poll operations on fd?
 
 ### Milestone 2: Core Networking (Week 10)
 - **Gates:** B4, B6, B7 complete
@@ -452,14 +453,28 @@ Legend:
 
 ## Summary Statistics
 
-- **Total Project Duration:** 31 weeks (~7.5 months)
-- **Critical Path Length:** 31 weeks
+- **Total Project Duration:** 31.5 weeks (~8 months)
+- **Critical Path Length:** 31.5 weeks
 - **Number of Critical Activities:** 13
 - **Number of Non-Critical Activities:** 12
 - **Maximum Float:** 6 weeks (B21 - logging-framework)
 - **Average Activity Duration:** 2.1 weeks
 - **Longest Activity:** B10 (transparent-proxying) - 3 weeks
 - **Shortest Activity:** B1 (basic-module-structure) - 1 week
+- **Key Technical Challenge:** B2 (syscall-and-fd-operations) - 2.5 weeks
+
+### API Design (B2 Critical Component):
+```c
+// Syscall (similar to eventfd, timerfd)
+int mprox_create(unsigned int flags);
+
+// File operations on returned fd
+ssize_t read(int fd, void *buf, size_t count);   // Read status/stats
+ssize_t write(int fd, const void *buf, size_t count); // Write config
+int ioctl(int fd, unsigned long request, ...);    // Control operations
+int poll(int fd, struct pollfd *fds, nfds_t nfds); // Event notification
+int close(int fd);                                 // Cleanup
+```
 
 ### Effort Distribution:
 - **Foundation & Infrastructure:** 15% (B1, B2, B3, B21)
@@ -472,15 +487,25 @@ Legend:
 
 ## Conclusion
 
-The PDM analysis reveals a **31-week critical path** with significant dependencies in the networking core (B4-B10). Key success factors include:
+The PDM analysis reveals a **31.5-week critical path** with significant dependencies in the networking core (B4-B10). The file descriptor-based approach follows the "everything is a file" paradigm, making the system truly Unix-like and maintainable.
+
+### Architecture Summary:
+- **Single syscall:** `int mprox_create(unsigned int flags)` returns fd (like `eventfd()`, `timerfd()`, `signalfd()`)
+- **All operations via fd:** read(), write(), ioctl(), poll(), close()
+- **Per-fd state:** Each fd has independent proxy configuration
+- **Standard semantics:** Supports dup(), fork() inheritance, SCM_RIGHTS passing
+
+Key success factors include:
 
 1. **Protect the critical path** - Any delay cascades to final delivery
 2. **Leverage parallelism** - 12 tasks have float and can absorb delays
 3. **Early testing** - Don't wait until Week 24 to start testing
 4. **Resource allocation** - Assign best developers to critical path
-5. **Risk management** - Focus on B7, B10, B13 (highest technical risk)
+5. **Risk management** - Focus on B2 (syscall+fd implementation), B7 (packet rewriting), B10 (transparent proxy), B13 (performance)
+6. **File descriptor paradigm** - Ensures consistent, clean API through standard file operations
+7. **Anonymous inode implementation** - Similar to eventfd, requires deep kernel knowledge
 
-With proper resource allocation and risk management, the project can deliver a production-ready kernel module in approximately **7-8 months**.
+With proper resource allocation and risk management, the project can deliver a production-ready kernel module with a clean, Unix-like file descriptor interface in approximately **8 months**.
 
 ---
 

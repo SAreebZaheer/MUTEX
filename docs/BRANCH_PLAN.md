@@ -16,39 +16,47 @@ Building a loadable kernel module (LKM) for Linux that provides a system call to
 - Add proper kernel logging with `printk`
 - Implement basic error handling
 - Create initial documentation structure
+- Design file descriptor-based architecture overview
 
 **Dependencies:** None  
 **Testing:** Module loads and unloads cleanly without kernel panics
 
 ---
 
-### 2. `feature/syscall-registration`
-**Description:** Implement custom system call registration mechanism
-- Research and implement system call table hooking (or alternative methods)
-- Create wrapper functions for safe syscall registration
-- Define syscall number allocation strategy
-- Implement syscall stub function
-- Add validation and permission checks (capability checks for CAP_NET_ADMIN)
+### 2. `feature/syscall-and-fd-operations`
+**Description:** Implement single system call that returns file descriptor for proxy control
+- Add new system call in the linux kernel.
+- Create `mprox_create()` syscall that returns a file descriptor
+- Implement anonymous inode-based file operations (similar to eventfd, timerfd, signalfd)
+- Define file operations structure (open, read, write, ioctl, poll, release)
+- Design ioctl command structure for all proxy operations
+- Add permission checks (CAP_NET_ADMIN) in syscall before fd creation
 - Handle architecture-specific considerations (x86_64, ARM, etc.)
-- Implement cleanup on module unload
+- Implement per-fd private data structure for proxy state
+- Implement cleanup on fd close and module unload
+- Handle fd inheritance across fork/exec properly
 
 **Dependencies:** `feature/basic-module-structure`  
-**Testing:** System call can be registered and invoked from userspace without crashes
+**Testing:** Syscall returns valid fd, file operations work, fd can be closed cleanly
 
 ---
 
 ### 3. `feature/userspace-interface`
-**Description:** Create userspace library/tools to interact with the kernel module
-- Design system call interface (parameters, return values)
-- Create C library wrapper functions
-- Implement ioctl interface as alternative/supplement to syscall
-- Develop command-line utility for proxy management
+**Description:** Create userspace library/tools to interact with the proxy via file descriptor
+- Create C library wrapper for `mprox_create()` syscall
+- Design high-level API around returned file descriptor
+- Implement helper functions for common ioctl commands (set proxy, enable/disable, get status)
+- Implement configuration through write() operations (structured format)
+- Support status queries through read() operations (JSON/binary format)
+- Support poll/select/epoll for event notifications
+- Develop command-line utility for proxy management using the fd API
 - Add proper error handling and errno mapping
-- Create example programs demonstrating usage
-- Write API documentation
+- Create example programs demonstrating fd-based workflow
+- Write comprehensive API documentation
+- Support multiple concurrent file descriptors in same process
 
-**Dependencies:** `feature/syscall-registration`  
-**Testing:** Userspace programs can successfully communicate with kernel module
+**Dependencies:** `feature/syscall-and-fd-operations`  
+**Testing:** Programs can call syscall, get fd, perform operations, close fd successfully
 
 ---
 
@@ -56,13 +64,15 @@ Building a loadable kernel module (LKM) for Linux that provides a system call to
 **Description:** Implement Netfilter hooks for packet interception
 - Register Netfilter hooks at appropriate points (NF_INET_PRE_ROUTING, NF_INET_POST_ROUTING, NF_INET_LOCAL_OUT)
 - Implement hook handler functions
-- Add packet inspection logic
+- Add packet inspection logic based on per-fd proxy configurations
 - Implement filtering based on configured rules
 - Handle different protocols (TCP, UDP, ICMP)
 - Add hook priority management
-- Implement hook registration/unregistration on proxy enable/disable
+- Link packets to owning process and its proxy fd(s)
+- Implement hook registration/unregistration on proxy enable/disable via ioctl
+- Support multiple active proxy fds with different configurations
 
-**Dependencies:** `feature/syscall-registration`  
+**Dependencies:** `feature/syscall-and-fd-operations`  
 **Testing:** Hooks successfully intercept packets without dropping legitimate traffic
 
 ---
@@ -70,16 +80,20 @@ Building a loadable kernel module (LKM) for Linux that provides a system call to
 ### 5. `feature/proxy-configuration`
 **Description:** Implement proxy server configuration and management
 - Design data structures for proxy configuration (server address, port, protocol)
-- Implement configuration storage (per-process, global, or both)
+- Store configuration in per-fd private data structure
 - Add proxy server validation
-- Implement configuration update mechanism via syscall/ioctl
-- Add support for multiple proxy servers
-- Implement proxy selection logic
-- Add configuration persistence options
-- Implement read/write locking for thread-safety
+- Implement configuration update via write() operations with structured format (JSON/binary)
+- Implement alternative ioctl-based configuration for atomic updates
+- Add support for multiple proxy servers per fd
+- Implement proxy selection logic (round-robin, failover, etc.)
+- Expose configuration via read() operations
+- Create /proc or /sys interface for global read-only status
+- Implement read/write locking for thread-safety on per-fd data
+- Support both text and binary configuration formats
+- Allow fd to be passed between processes (SCM_RIGHTS) with configuration intact
 
-**Dependencies:** `feature/syscall-registration`  
-**Testing:** Proxy configurations can be set, updated, and retrieved correctly
+**Dependencies:** `feature/syscall-and-fd-operations`  
+**Testing:** Proxy configurations can be written to fd, retrieved from fd correctly
 
 ---
 
@@ -149,33 +163,38 @@ Building a loadable kernel module (LKM) for Linux that provides a system call to
 
 ### 10. `feature/transparent-proxying`
 **Description:** Implement transparent proxy mode (no application changes needed)
-- Implement transparent socket interception
-- Handle DNS requests through proxy
+- Implement transparent socket interception for processes with active proxy fd
+- Handle DNS requests through proxy based on fd configuration
 - Implement UDP proxying for DNS
 - Add NAT-like translation for return traffic
 - Handle local vs. remote address detection
-- Implement bypass rules for local traffic
-- Add support for proxy auto-configuration
+- Implement bypass rules for local traffic (configurable via fd)
+- Add support for proxy auto-configuration via fd settings
 - Handle applications that bind to specific interfaces
+- Support "global" mode where fd affects all system traffic vs "scoped" mode for specific processes
+- Allow LD_PRELOAD-based library to auto-create fd for legacy apps
 
 **Dependencies:** `feature/packet-rewriting`, `feature/connection-tracking`, `feature/socks-protocol`  
-**Testing:** Applications work without modification when proxy is enabled
+**Testing:** Applications work without modification when process holds active proxy fd
 
 ---
 
 ### 11. `feature/process-filtering`
-**Description:** Implement per-process proxy rules
-- Track process information (PID, UID, GID)
-- Implement process-based filtering rules
+**Description:** Implement per-process proxy rules via file descriptor ownership
+- Track process information (PID, UID, GID) associated with each fd at creation time
+- Implement process-based filtering rules configured via ioctl/write on fd
 - Add cgroup integration for process groups
-- Implement process whitelist/blacklist
+- Implement process whitelist/blacklist configurable via write() to fd
 - Handle process hierarchy (parent/child relationships)
 - Add executable path-based filtering
-- Implement dynamic rule updates
+- Implement dynamic rule updates through fd file operations
 - Handle short-lived processes efficiently
+- Support fd inheritance across fork/exec (proxy applies to child processes)
+- Allow fd to specify "current process only" vs "process tree" scope
+- Support fd passing via Unix domain sockets with proper credential tracking
 
 **Dependencies:** `feature/netfilter-hooks`, `feature/proxy-configuration`  
-**Testing:** Specific processes are proxied while others use direct connection
+**Testing:** Specific processes with open fds are proxied while others use direct connection
 
 ---
 
@@ -263,33 +282,37 @@ Building a loadable kernel module (LKM) for Linux that provides a system call to
 
 ### 17. `feature/dns-handling`
 **Description:** Implement intelligent DNS handling and proxying
-- Implement DNS request interception
-- Add DNS caching in kernel space
-- Support DNS over proxy (SOCKS DNS)
-- Implement DNS leak prevention
-- Add custom DNS server configuration
-- Support DNS-over-HTTPS (DoH) / DNS-over-TLS (DoT)
+- Implement DNS request interception for processes with active proxy fd
+- Add per-fd DNS caching in kernel space
+- Support DNS over proxy (SOCKS DNS) configurable via fd
+- Implement DNS leak prevention based on fd settings
+- Add custom DNS server configuration per fd
+- Support DNS-over-HTTPS (DoH) / DNS-over-TLS (DoT) via fd config
 - Implement DNS response validation
-- Handle split-horizon DNS
+- Handle split-horizon DNS with per-fd DNS rules
+- Allow DNS bypass for specific domains via fd write() operation
+- Support DNS query logging readable via fd
 
 **Dependencies:** `feature/transparent-proxying`, `feature/packet-rewriting`  
-**Testing:** DNS queries are correctly proxied and cached
+**Testing:** DNS queries from processes with proxy fd are correctly proxied and cached
 
 ---
 
 ### 18. `feature/statistics-monitoring`
 **Description:** Add statistics collection and monitoring
-- Implement per-connection statistics
-- Add aggregate statistics (bandwidth, packet counts)
-- Create procfs/sysfs interface for statistics
-- Implement statistics export to userspace
-- Add real-time monitoring support
-- Implement statistics persistence
-- Add alerts/notifications for anomalies
-- Create dashboard-compatible output format
+- Implement per-connection statistics tracked by owning fd
+- Add per-fd aggregate statistics (bandwidth, packet counts)
+- Expose per-fd statistics via read() operations on the fd
+- Create procfs/sysfs interface for global statistics
+- Implement statistics export to userspace via ioctl
+- Add real-time monitoring support via poll/select on fd (becomes readable when stats update)
+- Implement statistics persistence across fd lifecycle
+- Add alerts/notifications for anomalies (available via read() on fd)
+- Create dashboard-compatible output format (JSON from read())
+- Support statistics aggregation across multiple fds
 
 **Dependencies:** `feature/connection-tracking`  
-**Testing:** Statistics are accurate and accessible from userspace
+**Testing:** Statistics are accurate and accessible via fd read operations
 
 ---
 
@@ -312,16 +335,19 @@ Building a loadable kernel module (LKM) for Linux that provides a system call to
 ### 20. `feature/configuration-file`
 **Description:** Implement configuration file support
 - Design configuration file format (JSON/YAML/INI)
-- Implement parser in kernel space or userspace daemon
-- Add hot-reload capability
-- Support configuration validation
+- Implement userspace daemon that creates proxy fd via syscall
+- Daemon writes configuration to fd from config file
+- Add hot-reload capability: daemon re-writes to fd on config change
+- Support configuration validation in userspace before write to fd
 - Implement default configurations
 - Add configuration migration tools
 - Support environment-specific configs
-- Implement configuration backup/restore
+- Implement configuration backup/restore via read() from fd
+- Create file-watch mechanism to auto-reload config and update fd
+- Support multiple daemon instances with different fds/configs
 
 **Dependencies:** `feature/userspace-interface`, `feature/proxy-configuration`  
-**Testing:** Configuration changes take effect without module reload
+**Testing:** Configuration file changes are written to fd and take effect immediately
 
 ---
 
@@ -408,10 +434,10 @@ Building a loadable kernel module (LKM) for Linux that provides a system call to
 ## Branch Workflow
 
 ### Recommended Development Order:
-1. Basic infrastructure (branches 1-3)
-2. Core networking (branches 4-7)
-3. Proxy protocols (branches 8-10)
-4. Advanced features (branches 11-17)
+1. Basic infrastructure (branches 1-3: module structure, syscall+fd operations, userspace interface)
+2. Core networking (branches 4-7: netfilter, config, tracking, rewriting)
+3. Proxy protocols (branches 8-10: SOCKS, HTTP, transparent)
+4. Advanced features (branches 11-17: filtering, routing, DNS, etc.)
 5. Monitoring and reliability (branches 18-21)
 6. Quality assurance (branches 22-23)
 7. Distribution (branches 24-25)
@@ -432,11 +458,20 @@ Building a loadable kernel module (LKM) for Linux that provides a system call to
 
 ## Key Technical Considerations
 
+### File Descriptor Design:
+- Single syscall `mprox_create()` returns fd (like `eventfd()`, `timerfd()`)
+- All operations through standard file operations (read, write, ioctl, poll, close)
+- Per-fd private data stores proxy configuration and state
+- Supports fd passing between processes via Unix domain sockets
+- Proper reference counting for fd lifecycle management
+
 ### Security Concerns:
 - Kernel modules run with elevated privileges
+- Syscall checks CAP_NET_ADMIN before creating fd
 - Input validation is critical to prevent kernel panics
 - Memory safety is paramount (no buffer overflows)
-- Proper locking to prevent race conditions
+- Proper locking to prevent race conditions on per-fd data
+- Validate all data written to fd before processing
 
 ### Performance Considerations:
 - Minimize per-packet processing overhead
