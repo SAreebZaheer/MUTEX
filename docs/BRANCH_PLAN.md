@@ -26,7 +26,7 @@ Building a loadable kernel module (LKM) for Linux that provides a system call to
 ### 2. `feature/syscall-and-fd-operations`
 **Description:** Implement single system call that returns file descriptor for proxy control
 - Add new system call in the linux kernel.
-- Create `mutex_proxy_create()` syscall that returns a file descriptor
+- Create `mprox_create()` syscall that returns a file descriptor
 - Implement anonymous inode-based file operations (similar to eventfd, timerfd, signalfd)
 - Define file operations structure (open, read, write, ioctl, poll, release)
 - Design ioctl command structure for all proxy operations
@@ -43,7 +43,7 @@ Building a loadable kernel module (LKM) for Linux that provides a system call to
 
 ### 3. `feature/userspace-interface`
 **Description:** Create userspace library/tools to interact with the proxy via file descriptor
-- Create C library wrapper for `mutex_proxy_create()` syscall
+- Create C library wrapper for `mprox_create()` syscall
 - Design high-level API around returned file descriptor
 - Implement helper functions for common ioctl commands (set proxy, enable/disable, get status)
 - Implement configuration through write() operations (structured format)
@@ -459,7 +459,7 @@ Building a loadable kernel module (LKM) for Linux that provides a system call to
 ## Key Technical Considerations
 
 ### File Descriptor Design:
-- Single syscall `mutex_proxy_create()` returns fd (like `eventfd()`, `timerfd()`)
+- Single syscall `mprox_create()` returns fd (like `eventfd()`, `timerfd()`)
 - All operations through standard file operations (read, write, ioctl, poll, close)
 - Per-fd private data stores proxy configuration and state
 - Supports fd passing between processes via Unix domain sockets

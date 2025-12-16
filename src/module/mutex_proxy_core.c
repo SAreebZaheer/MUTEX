@@ -5,7 +5,7 @@
  * Copyright (C) 2025 MUTEX Team
  * Authors: Syed Areeb Zaheer, Azeem, Hamza Bin Aamir
  *
- * This file implements the mutex_proxy_create() syscall that returns
+ * This file implements the mprox_create() syscall that returns
  * a file descriptor for proxy control, following the "everything is a file"
  * paradigm similar to eventfd(), timerfd(), and signalfd().
  */

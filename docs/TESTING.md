@@ -10,6 +10,7 @@ This document describes the testing strategy for the mutex_proxy kernel syscall 
 
 #### Test 1.1: Basic Creation
 ```c
+/* Test basic mprox_create syscall */
 int fd = syscall(SYS_mprox_create, 0);
 assert(fd >= 0);
 close(fd);
@@ -18,6 +19,7 @@ close(fd);
 
 #### Test 1.2: CLOEXEC Flag
 ```c
+/* Test mprox_create with CLOEXEC flag */
 int fd = syscall(SYS_mprox_create, MUTEX_PROXY_CLOEXEC);
 assert(fd >= 0);
 int flags = fcntl(fd, F_GETFD);
@@ -28,6 +30,7 @@ close(fd);
 
 #### Test 1.3: NONBLOCK Flag
 ```c
+/* Test mprox_create with NONBLOCK flag */
 int fd = syscall(SYS_mprox_create, MUTEX_PROXY_NONBLOCK);
 assert(fd >= 0);
 int flags = fcntl(fd, F_GETFL);
@@ -38,6 +41,7 @@ close(fd);
 
 #### Test 1.4: Multiple Flags
 ```c
+/* Test mprox_create with multiple flags */
 int fd = syscall(SYS_mprox_create,
                  MUTEX_PROXY_CLOEXEC | MUTEX_PROXY_NONBLOCK);
 assert(fd >= 0);
@@ -47,6 +51,7 @@ close(fd);
 
 #### Test 1.5: Invalid Flags
 ```c
+/* Test mprox_create with invalid flags */
 int fd = syscall(SYS_mprox_create, 0xFFFF);
 assert(fd == -EINVAL);
 ```
@@ -54,7 +59,7 @@ assert(fd == -EINVAL);
 
 #### Test 1.6: Capability Check
 ```c
-/* Drop CAP_NET_ADMIN */
+/* Test mprox_create without CAP_NET_ADMIN */
 cap_t caps = cap_get_proc();
 cap_value_t cap_list[] = {CAP_NET_ADMIN};
 cap_set_flag(caps, CAP_EFFECTIVE, 1, cap_list, CAP_CLEAR);
@@ -71,6 +76,7 @@ cap_free(caps);
 
 #### Test 2.1: Write Configuration
 ```c
+/* Test configuration via write() after mprox_create */
 int fd = syscall(SYS_mprox_create, 0);
 struct mutex_proxy_config cfg = {
     .version = 1,
@@ -460,6 +466,7 @@ sudo ./test_mprox
 
 ### Compilation
 ```bash
+# Compile test program for mprox_create syscall
 gcc -o test_mprox test_mprox.c -lcap -lpthread
 ```
 

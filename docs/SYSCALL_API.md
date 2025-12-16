@@ -2,7 +2,7 @@
 
 ## Overview
 
-The `mutex_proxy_create()` syscall provides a file descriptor-based interface for kernel-level proxy control. It follows the Unix "everything is a file" philosophy, similar to `eventfd()`, `timerfd()`, and `signalfd()`.
+The `mprox_create()` syscall provides a file descriptor-based interface for kernel-level proxy control. It follows the Unix "everything is a file" philosophy, similar to `eventfd()`, `timerfd()`, and `signalfd()`.
 
 ## Syscall Number
 
@@ -14,6 +14,8 @@ The `mutex_proxy_create()` syscall provides a file descriptor-based interface fo
 ```c
 int mprox_create(unsigned int flags);
 ```
+
+**Note**: The syscall is named `mprox_create` (not `mutex_proxy_create`) for brevity.
 
 ### Parameters
 
@@ -37,6 +39,8 @@ int mprox_create(unsigned int flags);
 ## File Descriptor Operations
 
 The returned file descriptor supports standard file operations:
+
+**Note**: The file descriptor appears as `[mutex_proxy]` in `/proc/<pid>/fd/` for identification.
 
 ### `read()` - Read Statistics
 
@@ -230,7 +234,7 @@ int main() {
     struct mutex_proxy_config cfg;
     struct mutex_proxy_stats stats;
 
-    /* Create proxy fd */
+    /* Create proxy fd using mprox_create syscall */
     fd = syscall(SYS_mprox_create, 0);
     if (fd < 0) {
         perror("mprox_create");
@@ -273,7 +277,7 @@ int main() {
 ### Close-on-Exec
 
 ```c
-/* Create fd that closes on exec */
+/* Create fd that closes on exec using mprox_create */
 int fd = syscall(SYS_mprox_create, MUTEX_PROXY_CLOEXEC);
 
 /* Configure and enable proxy */
@@ -290,7 +294,7 @@ if (pid == 0) {
 ### Process Inheritance
 
 ```c
-/* Create fd WITHOUT CLOEXEC */
+/* Create fd WITHOUT CLOEXEC using mprox_create */
 int fd = syscall(SYS_mprox_create, 0);
 
 /* Configure and enable proxy */
@@ -308,7 +312,7 @@ if (pid == 0) {
 ### System-Wide Proxy
 
 ```c
-/* Create global proxy affecting all processes */
+/* Create global proxy affecting all processes using mprox_create */
 int fd = syscall(SYS_mprox_create, MUTEX_PROXY_GLOBAL);
 
 /* Configure and enable proxy */
@@ -375,6 +379,7 @@ Debug messages include:
 - `timerfd_create()` - Timer fd
 - `signalfd()` - Signal delivery fd
 - `pidfd_open()` - Process fd
+- `mprox_create()` - Proxy control fd (this syscall)
 
 ## See Also
 

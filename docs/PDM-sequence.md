@@ -61,7 +61,7 @@ This document outlines the Precedence Diagramming Method (PDM) for the MUTEX ker
 [B1: Module Structure]
          |
          v
-[B2: mutex_proxy_create() syscall → returns fd]
+[B2: mprox_create() syscall → returns fd]
          |    (anon inode + file_operations)
          +------------+-------------+
          |            |             |
@@ -140,7 +140,7 @@ This document outlines the Precedence Diagramming Method (PDM) for the MUTEX ker
 
 ### Critical Path Activities:
 1. **B1** - basic-module-structure (1 week)
-2. **B2** - syscall-and-fd-operations (2.5 weeks) - `mutex_proxy_create()` syscall returns fd with file_operations
+2. **B2** - syscall-and-fd-operations (2.5 weeks) - `mprox_create()` syscall returns fd with file_operations
 3. **B4** - netfilter-hooks (2 weeks)
 4. **B6** - connection-tracking (2 weeks)
 5. **B7** - packet-rewriting (2.5 weeks)
@@ -383,7 +383,7 @@ If 31 weeks is too long, compress to ~24 weeks by:
 
 ### Milestone 1: Foundation Complete (Week 3.5)
 - **Gates:** B1, B2 complete
-- **Deliverable:** Module loads, `mutex_proxy_create()` syscall implemented and returns valid fd
+- **Deliverable:** Module loads, `mprox_create()` syscall implemented and returns valid fd
 - **Go/No-Go:** Can userspace call syscall, receive fd, perform read/write/ioctl/poll operations on fd?
 
 ### Milestone 2: Core Networking (Week 10)
@@ -466,7 +466,7 @@ Legend:
 ### API Design (B2 Critical Component):
 ```c
 // Syscall (similar to eventfd, timerfd)
-int mutex_proxy_create(unsigned int flags);
+int mprox_create(unsigned int flags);
 
 // File operations on returned fd
 ssize_t read(int fd, void *buf, size_t count);   // Read status/stats
@@ -490,7 +490,7 @@ int close(int fd);                                 // Cleanup
 The PDM analysis reveals a **31.5-week critical path** with significant dependencies in the networking core (B4-B10). The file descriptor-based approach follows the "everything is a file" paradigm, making the system truly Unix-like and maintainable.
 
 ### Architecture Summary:
-- **Single syscall:** `int mutex_proxy_create(unsigned int flags)` returns fd (like `eventfd()`, `timerfd()`, `signalfd()`)
+- **Single syscall:** `int mprox_create(unsigned int flags)` returns fd (like `eventfd()`, `timerfd()`, `signalfd()`)
 - **All operations via fd:** read(), write(), ioctl(), poll(), close()
 - **Per-fd state:** Each fd has independent proxy configuration
 - **Standard semantics:** Supports dup(), fork() inheritance, SCM_RIGHTS passing

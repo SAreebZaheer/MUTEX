@@ -65,7 +65,7 @@ struct mutex_proxy_context *mutex_proxy_ctx_alloc(unsigned int flags);
 void mutex_proxy_ctx_get(struct mutex_proxy_context *ctx);
 void mutex_proxy_ctx_put(struct mutex_proxy_context *ctx);
 
-/* System call prototype */
+/* System call prototype - mprox_create (syscall 471) */
 asmlinkage long sys_mutex_proxy_create(unsigned int flags);
 
 #endif /* _MUTEX_PROXY_H */
