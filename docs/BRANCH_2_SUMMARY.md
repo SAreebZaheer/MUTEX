@@ -24,7 +24,7 @@
 
 ### 1. System Call Table Hooking
 
-**Location:** [kproxy.c](../src/module/kproxy.c#L153-L201)
+**Location:** [mutex_proxy_lkm.c](../src/module/mutex_proxy_lkm.c#L153-L201)
 
 Implemented `find_syscall_table()` function that:
 - Uses kprobes to locate `kallsyms_lookup_name` on kernels >= 5.7
@@ -57,29 +57,16 @@ static unsigned long **find_syscall_table(void)
 
 ### 2. Write Protection Management
 
-**Location:** [kproxy.c](../src/module/kproxy.c#L55-L71)
+**Location:** [mutex_proxy_lkm.c](../src/module/mutex_proxy_lkm.c#L55-L71)
 
 Implemented CR0 register manipulation:
 - `disable_write_protection()` - Clears WP bit (bit 16) in CR0
 - `enable_write_protection()` - Sets WP bit in CR0
 - Allows temporary modification of read-only syscall table
 
-**Key Code:**
-```c
-static inline void disable_write_protection(void)
-{
-	write_cr0_forced(read_cr0() & (~0x10000));
-}
-
-static inline void enable_write_protection(void)
-{
-	write_cr0_forced(read_cr0() | 0x10000);
-}
-```
-
 ### 3. Architecture-Specific Syscall Numbers
 
-**Location:** [kproxy.c](../src/module/kproxy.c#L31-L41)
+**Location:** [mutex_proxy_lkm.c](../src/module/mutex_proxy_lkm.c#L31-L41)
 
 Defined syscall numbers for different architectures:
 - **x86_64:** 335 (user-defined range)
@@ -87,78 +74,29 @@ Defined syscall numbers for different architectures:
 - **aarch64 (ARM64):** 400
 - **Default:** 335 with compiler warning
 
-**Implementation:**
-```c
-#if defined(__x86_64__)
-	#define __NR_kproxy_enable 335
-#elif defined(__i386__)
-	#define __NR_kproxy_enable 358
-#elif defined(__aarch64__)
-	#define __NR_kproxy_enable 400
-#else
-	#warning "Architecture not explicitly supported"
-	#define __NR_kproxy_enable 335
-#endif
-```
 
 ### 4. Custom Syscall Implementation
 
-**Location:** [kproxy.c](../src/module/kproxy.c#L93-L145)
+**Location:** [mutex_proxy_lkm.c](../src/module/mutex_proxy_lkm.c#L93-L145)
 
-Implemented `kproxy_enable_syscall()` with:
+Implemented `mprox_enable_syscall()` with:
 - **Capability checking:** Validates CAP_NET_ADMIN
 - **Input validation:** Checks userspace pointer and parameters
 - **Data copying:** Safe `copy_from_user()` usage
 - **Parameter validation:** Checks enable flag (0-1) and port range (1-65535)
 - **Logging:** Records PID, UID, and operation details
 
-**Key Features:**
-```c
-asmlinkage long kproxy_enable_syscall(struct kproxy_config __user *config)
-{
-	/* Check CAP_NET_ADMIN capability */
-	if (!capable(CAP_NET_ADMIN)) {
-		pr_warn("KPROXY: syscall denied - CAP_NET_ADMIN required\n");
-		return -EPERM;
-	}
-	
-	/* Copy and validate configuration from userspace */
-	ret = copy_from_user(&kconfig, config, sizeof(struct kproxy_config));
-	if (ret != 0) {
-		return -EFAULT;
-	}
-	
-	/* Validate parameters */
-	if (kconfig.enable > 1 || kconfig.proxy_port == 0 || 
-	    kconfig.proxy_port > 65535) {
-		return -EINVAL;
-	}
-	
-	/* Log invocation */
-	pr_info("KPROXY: syscall invoked by PID %d (UID %d)\n",
-		current->pid, current_uid().val);
-	
-	return 0;
-}
-```
 
 ### 5. Proxy Configuration Structure
 
-**Location:** [kproxy.c](../src/module/kproxy.c#L44-L49)
+**Location:** [mutex_proxy_lkm.c](../src/module/mutex_proxy_lkm.c#L44-L49)
 
-```c
-struct kproxy_config {
-	unsigned int enable;		/* 0 = disable, 1 = enable */
-	unsigned int proxy_port;	/* Proxy server port */
-	char proxy_addr[16];		/* Proxy server IP address (IPv4) */
-};
-```
 
 ### 6. Syscall Registration
 
-**Location:** [kproxy.c](../src/module/kproxy.c#L203-L227)
+**Location:** [mutex_proxy_lkm.c](../src/module/mutex_proxy_lkm.c#L203-L227)
 
-Implemented `register_kproxy_syscall()`:
+Implemented `register_mprox_syscall()`:
 - Finds syscall table
 - Saves original syscall pointer
 - Disables write protection
@@ -167,9 +105,9 @@ Implemented `register_kproxy_syscall()`:
 
 ### 7. Cleanup and Unregistration
 
-**Location:** [kproxy.c](../src/module/kproxy.c#L229-L254)
+**Location:** [mutex_proxy_lkm.c](../src/module/mutex_proxy_lkm.c#L229-L254)
 
-Implemented `unregister_kproxy_syscall()`:
+Implemented `unregister_mprox_syscall()`:
 - Checks if syscall table pointer is valid
 - Disables write protection
 - Restores original syscall
@@ -223,7 +161,7 @@ sudo ./test_module.sh
 
 Added compiler flag to handle kernel version differences:
 ```makefile
-CFLAGS_REMOVE_kproxy.o := -ftrivial-auto-var-init=zero
+CFLAGS_REMOVE_mprox.o := -ftrivial-auto-var-init=zero
 ```
 
 This resolves compilation issues with gcc versions that don't support the flag.
@@ -254,13 +192,7 @@ This resolves compilation issues with gcc versions that don't support the flag.
 ### Build Test
 ```bash
 $ make clean && make
-Building KPROXY kernel module...
-  CC [M]  /home/areeb/MUTEX/src/module/kproxy.o
-  MODPOST /home/areeb/MUTEX/src/module/Module.symvers
-  CC [M]  /home/areeb/MUTEX/src/module/kproxy.mod.o
-  LD [M]  /home/areeb/MUTEX/src/module/kproxy.ko
-Build complete!
-```
+
 
 **Status:** ✅ Success (with expected kernel header warnings)
 
@@ -368,7 +300,7 @@ Will implement:
 ## Files Modified/Created
 
 ### Modified Files
-1. [src/module/kproxy.c](../src/module/kproxy.c) - Core implementation
+1. [src/module/mutex_proxy_lkm.c](../src/module/mutex_proxy_lkm.c) - Core implementation
 2. [src/module/Makefile](../src/module/Makefile) - Build system updates
 3. [src/module/test_module.sh](../src/module/test_module.sh) - Enhanced testing
 
@@ -393,7 +325,7 @@ This fulfills Branch 2 requirements from the project development plan.
 Features implemented:
 - Syscall table lookup using kprobes for modern kernels (>= 5.7)
 - Write protection management for syscall table modification
-- Custom kproxy_enable syscall with CAP_NET_ADMIN capability checking
+- Custom mprox_enable syscall with CAP_NET_ADMIN capability checking
 - Architecture-specific syscall number allocation (x86_64, i386, ARM64)
 - Input validation and userspace data copying
 - Proper cleanup and syscall unregistration on module unload
@@ -424,6 +356,6 @@ Branch 2 (syscall-registration) has been successfully implemented and tested. Th
 
 ---
 
-*Last Updated: December 14, 2025*  
+*Last Updated: December 16, 2025*  
 *Author: Syed Areeb Zaheer*  
 *Project: MUTEX - Multi-User Threaded Exchange Xfer*

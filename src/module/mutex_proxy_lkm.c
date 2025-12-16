@@ -1,5 +1,5 @@
 /*
- * KPROXY - Kernel-level Proxy Module
+ * MPROXY - Multithreaded Proxy Module
  * Part of the MUTEX (Multi-User Threaded Exchange Xfer) Project
  *
  * Authors: Syed Areeb Zaheer, Azeem, Hamza Bin Aamir
@@ -8,6 +8,8 @@
  * Description: This module provides a loadable kernel module (LKM) that
  * creates a kernel-level proxy service. It hooks into the network stack
  * to route packets through a proxy server.
+ * 
+ * Each mention of MUTEX is a refference to the project name, not Mututal Exclusion, unless stated otherwise.
  */
 
 #include <linux/module.h>
@@ -26,7 +28,7 @@
 /* Module metadata */
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Syed Areeb Zaheer, Azeem, Hamza Bin Aamir");
-MODULE_DESCRIPTION("KPROXY - Kernel-level proxy service module for MUTEX project");
+MODULE_DESCRIPTION("MPROXY - Multithreaded proxy service module for MUTEX project");
 MODULE_VERSION("0.2.0");
 
 /*
@@ -35,18 +37,18 @@ MODULE_VERSION("0.2.0");
  * For x86_64, we use a number in the range 335-424 (user-defined range).
  */
 #if defined(__x86_64__)
-	#define __NR_kproxy_enable 335
+	#define __NR_mprox_enable 335
 #elif defined(__i386__)
-	#define __NR_kproxy_enable 358
+	#define __NR_mprox_enable 358
 #elif defined(__aarch64__)
-	#define __NR_kproxy_enable 400
+	#define __NR_mprox_enable 400
 #else
 	#warning "Architecture not explicitly supported, using default syscall number"
-	#define __NR_kproxy_enable 335
+	#define __NR_mprox_enable 335
 #endif
 
 /* Proxy configuration structure passed from userspace */
-struct kproxy_config {
+struct mprox_config {
 	unsigned int enable;		/* 0 = disable, 1 = enable */
 	unsigned int proxy_port;	/* Proxy server port */
 	char proxy_addr[16];		/* Proxy server IP address (IPv4) */
@@ -82,7 +84,7 @@ static inline void enable_write_protection(void)
 }
 
 /*
- * kproxy_enable_syscall - Custom system call implementation
+ * mproxy_enable_syscall - Custom system call implementation
  * @config: Pointer to proxy configuration structure in userspace
  *
  * This system call enables or disables the kernel proxy service.
@@ -90,9 +92,9 @@ static inline void enable_write_protection(void)
  *
  * Return: 0 on success, negative error code on failure
  */
-asmlinkage long kproxy_enable_syscall(struct kproxy_config __user *config)
+asmlinkage long mprox_enable_syscall(struct mprox_config __user *config)
 {
-	struct kproxy_config kconfig;
+	struct mprox_config kconfig;
 	int ret;
 
 	/* Check if caller has CAP_NET_ADMIN capability */
@@ -108,7 +110,7 @@ asmlinkage long kproxy_enable_syscall(struct kproxy_config __user *config)
 	}
 
 	/* Copy configuration from userspace */
-	ret = copy_from_user(&kconfig, config, sizeof(struct kproxy_config));
+	ret = copy_from_user(&kconfig, config, sizeof(struct mprox_config));
 	if (ret != 0) {
 		pr_err("KPROXY: failed to copy config from userspace\n");
 		return -EFAULT;
@@ -198,14 +200,14 @@ static unsigned long **find_syscall_table(void)
 }
 
 /*
- * register_kproxy_syscall - Register custom system call
+ * register_mprox_syscall - Register custom system call
  *
  * Hooks our custom syscall into the system call table.
  * This requires temporarily disabling write protection.
  *
  * Return: 0 on success, negative error code on failure
  */
-static int register_kproxy_syscall(void)
+static int register_mprox_syscall(void)
 {
 	/* Find the syscall table */
 	sys_call_table_ptr = find_syscall_table();
@@ -215,17 +217,17 @@ static int register_kproxy_syscall(void)
 	}
 
 	/* Save original syscall (if any) at our chosen number */
-	original_syscall = (void *)sys_call_table_ptr[__NR_kproxy_enable];
+	original_syscall = (void *)sys_call_table_ptr[__NR_mprox_enable];
 	
 	pr_info("KPROXY: registering syscall at number %d\n",
-		__NR_kproxy_enable);
+		__NR_mprox_enable);
 
 	/* Disable write protection temporarily */
 	disable_write_protection();
 
 	/* Install our syscall */
-	sys_call_table_ptr[__NR_kproxy_enable] =
-		(unsigned long *)kproxy_enable_syscall;
+	sys_call_table_ptr[__NR_mprox_enable] =
+		(unsigned long *)mprox_enable_syscall;
 
 	/* Re-enable write protection */
 	enable_write_protection();
@@ -235,12 +237,12 @@ static int register_kproxy_syscall(void)
 }
 
 /*
- * unregister_kproxy_syscall - Unregister custom system call
+ * unregister_mprox_syscall - Unregister custom system call
  *
  * Restores the original syscall table entry and cleans up.
  * Must be called during module unload.
  */
-static void unregister_kproxy_syscall(void)
+static void unregister_mprox_syscall(void)
 {
 	if (!sys_call_table_ptr) {
 		pr_warn("KPROXY: syscall table pointer is NULL, nothing to unregister\n");
@@ -248,13 +250,13 @@ static void unregister_kproxy_syscall(void)
 	}
 
 	pr_info("KPROXY: unregistering syscall at number %d\n",
-		__NR_kproxy_enable);
+		__NR_mprox_enable);
 
 	/* Disable write protection */
 	disable_write_protection();
 
 	/* Restore original syscall */
-	sys_call_table_ptr[__NR_kproxy_enable] = (unsigned long *)original_syscall;
+	sys_call_table_ptr[__NR_mprox_enable] = (unsigned long *)original_syscall;
 
 	/* Re-enable write protection */
 	enable_write_protection();
@@ -263,14 +265,14 @@ static void unregister_kproxy_syscall(void)
 }
 
 /*
- * kproxy_module_init - Module initialization function
+ * mprox_module_init - Module initialization function
  *
  * This function is called when the module is loaded into the kernel.
  * It performs initial setup and resource allocation.
  *
  * Return: 0 on success, negative error code on failure
  */
-static int __init kproxy_module_init(void)
+static int __init mprox_module_init(void)
 {
 	int ret;
 
@@ -290,7 +292,7 @@ static int __init kproxy_module_init(void)
 #endif
 
 	/* Register custom system call */
-	ret = register_kproxy_syscall();
+	ret = register_mprox_syscall();
 	if (ret != 0) {
 		pr_err("KPROXY: failed to register syscall, error: %d\n", ret);
 		return ret;
@@ -303,22 +305,22 @@ static int __init kproxy_module_init(void)
 }
 
 /*
- * kproxy_module_exit - Module cleanup function
+ * mprox_module_exit - Module cleanup function
  *
  * This function is called when the module is unloaded from the kernel.
  * It performs cleanup and releases resources.
  */
-static void __exit kproxy_module_exit(void)
+static void __exit mprox_module_exit(void)
 {
 	pr_info("KPROXY: Cleaning up module\n");
 
 	/* Unregister system call */
-	unregister_kproxy_syscall();
+	unregister_mprox_syscall();
 
 	/* Perform additional cleanup operations */
 	pr_info("KPROXY: Module unloaded successfully\n");
 }
 
 /* Register init and exit functions */
-module_init(kproxy_module_init);
-module_exit(kproxy_module_exit);
+module_init(mprox_module_init);
+module_exit(mprox_module_exit);

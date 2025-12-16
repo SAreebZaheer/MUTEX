@@ -4,6 +4,8 @@
  *
  * Copyright (C) 2025 MUTEX Team
  * Authors: Syed Areeb Zaheer, Azeem, Hamza Bin Aamir
+ * 
+ * Each mention of MUTEX is a refference to the project name, not Mututal Exclusion, unless stated otherwise.
  */
 
 #ifndef _MUTEX_PROXY_H

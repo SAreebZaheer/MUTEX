@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * mutex_proxy_core.c - MUTEX kernel-level proxy syscall implementation
+ * mutex_proxy_core.c - Multithreaded kernel-level proxy syscall implementation by MUTEX Team
  *
  * Copyright (C) 2025 MUTEX Team
  * Authors: Syed Areeb Zaheer, Azeem, Hamza Bin Aamir
@@ -8,6 +8,8 @@
  * This file implements the mprox_create() syscall that returns
  * a file descriptor for proxy control, following the "everything is a file"
  * paradigm similar to eventfd(), timerfd(), and signalfd().
+ * 
+ * Each mention of MUTEX is a refference to the project name, not Mututal Exclusion, unless stated otherwise.
  */
 
 #include <linux/syscalls.h>
