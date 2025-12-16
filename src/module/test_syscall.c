@@ -17,52 +17,52 @@
 #include <sys/syscall.h>
 
 /* Proxy configuration structure (must match kernel structure) */
-struct kproxy_config {
-	unsigned int enable;		/* 0 = disable, 1 = enable */
+struct mutex_proxy_config {
+	unsigned int version;		/* Config version (must be 1) */
+	unsigned int proxy_type;	/* Proxy type (1=SOCKS5, 2=HTTP, 3=HTTPS) */
 	unsigned int proxy_port;	/* Proxy server port */
-	char proxy_addr[16];		/* Proxy server IP address */
+	unsigned char proxy_addr[16];	/* Proxy server address (IPv4 or IPv6) */
+	unsigned int flags;		/* Configuration flags */
+	unsigned char reserved[64];	/* Reserved for future use */
 };
 
 /*
- * Architecture-specific syscall numbers
- * Must match the definitions in kproxy.c
+ * Syscall number for mprox_create
+ * Using syscall 471 as allocated in Branch 2
  */
-#if defined(__x86_64__)
-	#define __NR_kproxy_enable 335
-#elif defined(__i386__)
-	#define __NR_kproxy_enable 358
-#elif defined(__aarch64__)
-	#define __NR_kproxy_enable 400
-#else
-	#define __NR_kproxy_enable 335
-#endif
+#define __NR_mprox_create 471
 
 /* Wrapper function for our custom syscall */
-static long kproxy_enable(struct kproxy_config *config)
+static int mprox_create(unsigned int flags)
 {
-	return syscall(__NR_kproxy_enable, config);
+	return syscall(__NR_mprox_create, flags);
 }
 
 /* Print usage information */
 static void print_usage(const char *progname)
 {
-	printf("Usage: %s <enable|disable> <proxy_ip> <proxy_port>\n", progname);
+	printf("Usage: %s [flags]\n", progname);
+	printf("\n");
+	printf("Flags:\n");
+	printf("  0x1 - MUTEX_PROXY_CLOEXEC (close-on-exec)\n");
+	printf("  0x2 - MUTEX_PROXY_NONBLOCK (non-blocking)\n");
+	printf("  0x4 - MUTEX_PROXY_GLOBAL (system-wide)\n");
 	printf("\n");
 	printf("Examples:\n");
-	printf("  %s enable 192.168.1.100 8080\n", progname);
-	printf("  %s disable 192.168.1.100 8080\n", progname);
+	printf("  %s 0     # Create basic proxy fd\n", progname);
+	printf("  %s 0x1   # Create with CLOEXEC\n", progname);
+	printf("  %s 0x3   # Create with CLOEXEC | NONBLOCK\n", progname);
 	printf("\n");
 	printf("Note: This program requires root privileges (CAP_NET_ADMIN)\n");
 }
 
 int main(int argc, char *argv[])
 {
-	struct kproxy_config config;
-	long ret;
-	int enable_flag;
+	unsigned int flags = 0;
+	int fd;
 
 	/* Print test header */
-	printf("KPROXY Syscall Test Program\n");
+	printf("MUTEX_PROXY mprox_create Syscall Test Program\n");
 	printf("============================\n\n");
 
 	/* Check if running as root */
@@ -72,81 +72,77 @@ int main(int argc, char *argv[])
 	}
 
 	/* Parse command line arguments */
-	if (argc != 4) {
-		print_usage(argv[0]);
-		return EXIT_FAILURE;
-	}
-
-	/* Parse enable/disable argument */
-	if (strcmp(argv[1], "enable") == 0) {
-		enable_flag = 1;
-	} else if (strcmp(argv[1], "disable") == 0) {
-		enable_flag = 0;
+	if (argc < 2) {
+		/* No flags provided, use default */
+		flags = 0;
+		printf("Using default flags: 0x%x\n\n", flags);
+	} else if (argc == 2) {
+		/* Parse flags from command line */
+		char *endptr;
+		flags = strtoul(argv[1], &endptr, 0);
+		if (*endptr != '\0') {
+			fprintf(stderr, "Error: Invalid flags value\n");
+			print_usage(argv[0]);
+			return EXIT_FAILURE;
+		}
+		printf("Using flags: 0x%x\n\n", flags);
 	} else {
-		fprintf(stderr, "Error: First argument must be 'enable' or 'disable'\n");
+		fprintf(stderr, "Error: Too many arguments\n");
 		print_usage(argv[0]);
 		return EXIT_FAILURE;
 	}
-
-	/* Parse proxy IP address */
-	if (strlen(argv[2]) >= sizeof(config.proxy_addr)) {
-		fprintf(stderr, "Error: Proxy IP address too long\n");
-		return EXIT_FAILURE;
-	}
-
-	/* Parse proxy port */
-	int port = atoi(argv[3]);
-	if (port <= 0 || port > 65535) {
-		fprintf(stderr, "Error: Invalid port number (must be 1-65535)\n");
-		return EXIT_FAILURE;
-	}
-
-	/* Fill configuration structure */
-	memset(&config, 0, sizeof(config));
-	config.enable = enable_flag;
-	config.proxy_port = port;
-	strncpy(config.proxy_addr, argv[2], sizeof(config.proxy_addr) - 1);
 
 	/* Display configuration */
 	printf("Configuration:\n");
-	printf("  Action:       %s\n", enable_flag ? "ENABLE" : "DISABLE");
-	printf("  Proxy IP:     %s\n", config.proxy_addr);
-	printf("  Proxy Port:   %u\n", config.proxy_port);
-	printf("  Syscall Num:  %d\n", __NR_kproxy_enable);
+	printf("  Syscall Number: %d (mprox_create)\n", __NR_mprox_create);
+	printf("  Flags:          0x%x\n", flags);
+	if (flags & 0x1) printf("    - MUTEX_PROXY_CLOEXEC\n");
+	if (flags & 0x2) printf("    - MUTEX_PROXY_NONBLOCK\n");
+	if (flags & 0x4) printf("    - MUTEX_PROXY_GLOBAL\n");
 	printf("\n");
 
 	/* Invoke the system call */
-	printf("Invoking kproxy_enable syscall...\n");
-	ret = kproxy_enable(&config);
+	printf("Invoking mprox_create syscall...\n");
+	fd = mprox_create(flags);
 
 	/* Check result */
-	if (ret == 0) {
-		printf("Success! Syscall completed successfully.\n");
+	if (fd >= 0) {
+		printf("Success! File descriptor created: %d\n", fd);
 		printf("Check kernel logs with: sudo dmesg | tail -20\n");
+		printf("\nYou can now:\n");
+		printf("  - Read statistics: cat /proc/self/fd/%d\n", fd);
+		printf("  - Use ioctl to control the proxy\n");
+		printf("  - Close the fd when done\n");
+
+		/* Keep fd open for a moment to allow inspection */
+		printf("\nPress Enter to close fd and exit...");
+		getchar();
+		close(fd);
+
 		return EXIT_SUCCESS;
 	} else {
-		fprintf(stderr, "Error: Syscall failed with return value: %ld\n", ret);
-		
+		fprintf(stderr, "Error: Syscall failed with return value: %d\n", fd);
+
 		/* Provide helpful error messages */
-		switch (-ret) {
+		switch (-fd) {
 		case EPERM:
 			fprintf(stderr, "Permission denied (CAP_NET_ADMIN required)\n");
 			break;
 		case EINVAL:
-			fprintf(stderr, "Invalid argument\n");
+			fprintf(stderr, "Invalid flags\n");
 			break;
-		case EFAULT:
-			fprintf(stderr, "Bad address\n");
+		case ENOMEM:
+			fprintf(stderr, "Out of memory\n");
 			break;
 		case ENOSYS:
-			fprintf(stderr, "System call not implemented (module loaded?)\n");
-			fprintf(stderr, "Try: sudo insmod kproxy.ko\n");
+			fprintf(stderr, "System call not implemented\n");
+			fprintf(stderr, "The kernel may not have mprox_create syscall support\n");
 			break;
 		default:
-			fprintf(stderr, "Error code: %ld (%s)\n", -ret, strerror(-ret));
+			fprintf(stderr, "Error code: %d (%s)\n", -fd, strerror(-fd));
 			break;
 		}
-		
+
 		return EXIT_FAILURE;
 	}
 }

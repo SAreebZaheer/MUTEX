@@ -1,10 +1,10 @@
 #!/bin/bash
 #
-# KPROXY Module Testing Script
+# MUTEX_PROXY Module Testing Script
 # Part of the MUTEX Project
 # Authors: Syed Areeb Zaheer, Azeem, Hamza Bin Aamir
 #
-# This script automates the testing of the KPROXY kernel module
+# This script automates the testing of the MUTEX_PROXY kernel module
 
 set -e
 
@@ -15,13 +15,13 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 # Module name
-MODULE_NAME="kproxy"
+MODULE_NAME="mutex_proxy"
 
-echo -e "${YELLOW}=== KPROXY Kernel Module Test Script ===${NC}"
+echo -e "${YELLOW}=== MUTEX_PROXY Kernel Module Test Script ===${NC}"
 echo -e "Testing: Branch 2 - Syscall Registration"
 
 # Check if we're running as root
-if [ "$EUID" -ne 0 ]; then 
+if [ "$EUID" -ne 0 ]; then
     echo -e "${RED}Please run as root (sudo)${NC}"
     exit 1
 fi
@@ -66,7 +66,7 @@ fi
 
 # Show kernel messages
 echo -e "\n${YELLOW}Kernel messages (loading):${NC}"
-dmesg | grep KPROXY | tail -10
+dmesg | grep mutex_proxy | tail -10
 
 # Wait a bit
 sleep 1
@@ -92,7 +92,7 @@ else
 fi
 
 echo -e "\n${YELLOW}Kernel messages (syscall enable):${NC}"
-dmesg | grep KPROXY | tail -5
+dmesg | grep mutex_proxy | tail -5
 
 sleep 1
 
@@ -107,7 +107,7 @@ else
 fi
 
 echo -e "\n${YELLOW}Kernel messages (syscall disable):${NC}"
-dmesg | grep KPROXY | tail -5
+dmesg | grep mutex_proxy | tail -5
 
 # Step 7: Unload the module
 echo -e "\n${YELLOW}[7/7] Unloading module...${NC}"
@@ -128,7 +128,7 @@ fi
 
 # Show kernel messages
 echo -e "\n${YELLOW}Kernel messages (unloading):${NC}"
-dmesg | grep KPROXY | tail -2
+dmesg | grep mutex_proxy | tail -2
 
 # Summary
 echo -e "\n${GREEN}=== All tests passed! ===${NC}"

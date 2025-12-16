@@ -1,12 +1,12 @@
-# KPROXY Kernel Module Makefile
+# MUTEX_PROXY Kernel Module Makefile
 # Part of the MUTEX Project
 # Authors: Syed Areeb Zaheer, Azeem, Hamza Bin Aamir
 
 # Module name
-obj-m += kproxy.o
+obj-m += mutex_proxy.o
 
-# Additional object files for the module
-kproxy-objs := mutex_proxy_core.o
+# Source files for the module
+mutex_proxy-objs := mutex_proxy_core.o
 
 # Kernel build directory
 KDIR := /lib/modules/$(shell uname -r)/build
@@ -22,7 +22,7 @@ ccflags-y := -Wall -Wextra
 
 # Default target - build the module
 all:
-	@echo "Building KPROXY kernel module..."
+	@echo "Building MUTEX_PROXY kernel module..."
 	$(MAKE) -C $(KDIR) M=$(PWD) modules
 	@echo "Build complete!"
 
@@ -36,21 +36,21 @@ clean:
 
 # Install the module (requires root)
 install:
-	@echo "Installing KPROXY module..."
+	@echo "Installing MUTEX_PROXY module..."
 	$(MAKE) -C $(KDIR) M=$(PWD) modules_install
 	@depmod -a
 	@echo "Installation complete!"
 
 # Load the module (requires root)
 load:
-	@echo "Loading KPROXY module..."
-	@sudo insmod kproxy.ko
+	@echo "Loading MUTEX_PROXY module..."
+	@sudo insmod mutex_proxy.ko
 	@echo "Module loaded. Check 'dmesg' for output."
 
 # Unload the module (requires root)
 unload:
-	@echo "Unloading KPROXY module..."
-	@sudo rmmod kproxy
+	@echo "Unloading MUTEX_PROXY module..."
+	@sudo rmmod mutex_proxy
 	@echo "Module unloaded."
 
 # Reload the module (requires root)
@@ -58,11 +58,11 @@ reload: unload load
 
 # Show module information
 info:
-	@modinfo kproxy.ko
+	@modinfo mutex_proxy.ko
 
 # Check if module is loaded
 status:
-	@lsmod | grep kproxy || echo "Module not loaded"
+	@lsmod | grep mutex_proxy || echo "Module not loaded"
 
 # Display kernel messages
 log:
@@ -70,7 +70,7 @@ log:
 
 # Help target
 help:
-	@echo "KPROXY Kernel Module Build System (MUTEX Project)"
+	@echo "MUTEX_PROXY Kernel Module Build System"
 	@echo ""
 	@echo "Available targets:"
 	@echo "  make          - Build the kernel module"
