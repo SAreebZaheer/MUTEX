@@ -2,6 +2,8 @@
 
 A kernel-level proxy service module for Linux that provides transparent network proxying through kernel space.
 
+Any mention of MUTEX is a direct reference to the development team's name unless specified explicitly.
+
 ## Project Overview
 
 MUTEX is a loadable kernel module (LKM) that creates a kernel-level proxy service by hooking into the Linux network stack. This approach eliminates the need for user-level proxying typically required by VPNs and proxy services, providing better performance and transparency.
@@ -28,6 +30,14 @@ MUTEX is a loadable kernel module (LKM) that creates a kernel-level proxy servic
 - Userspace test program for syscall validation
 - Input validation and secure parameter passing
 
+✅ **Branch 3 Complete:** `feature/userspace-interface`
+- Userspace C library (libmutex) for proxy API
+- Command-line tool (mprox) for proxy management
+- File descriptor-based design (mprox_create syscall)
+- Example programs demonstrating API usage
+- Comprehensive API documentation
+- Complete build system with install/uninstall support
+- 
 ✅ **Branch 4 Complete:** `feature/netfilter-hooks`
 - Netfilter hook integration at PRE_ROUTING, POST_ROUTING, LOCAL_OUT
 - Multi-protocol packet filtering (TCP, UDP, ICMP)
@@ -39,7 +49,15 @@ MUTEX is a loadable kernel module (LKM) that creates a kernel-level proxy servic
 - Debugging infrastructure with module parameters
 - Complete documentation and test suite
 
-🚧 **In Progress:** Branch 3 - `feature/userspace-interface`
+✅ **Branch 5 Complete:** `feature/proxy-configuration`
+- Multiple proxy servers per file descriptor (up to 8)
+- Three selection strategies: round-robin, failover, random
+- Comprehensive configuration validation
+- Thread-safe proxy configuration via write() and ioctl()
+- Per-server authentication support
+- Priority-based failover mechanism
+- IPv4/IPv6 address support
+
 
 ## Quick Start
 
@@ -58,23 +76,33 @@ sudo pacman -S linux-headers                     # Arch Linux
 # Navigate to module directory
 cd src/module
 
-# Build the module
+# Build the kernel module
 make
 
 # Run automated tests (requires root)
 sudo ./test_module.sh
 
-# Test syscall functionality (Branch 2+)
-gcc -o test_syscall test_syscall.c -Wall
-sudo ./test_syscall enable 192.168.1.100 8080
-sudo ./test_syscall disable 192.168.1.100 8080
-sudo dmesg | grep KPROXY | tail -10
-
-# Or manually load/unload
-sudo insmod kproxy.ko
-lsmod | grep kproxy
+# Load the module
+sudo insmod mutex_proxy.ko
+lsmod | grep mutex_proxy
 sudo dmesg | tail -10
-sudo rmmod kproxy
+sudo rmmod mutex_proxy
+
+# Build userspace library and tools (Branch 3+)
+cd ../userspace
+make
+
+# Test the CLI tool
+LD_LIBRARY_PATH=./lib ./cli/mprox version
+LD_LIBRARY_PATH=./lib ./cli/mprox help
+
+# Install library and CLI system-wide (optional)
+sudo make install
+
+# Run example programs
+cd examples
+LD_LIBRARY_PATH=../lib ./simple_proxy
+LD_LIBRARY_PATH=../lib ./multi_fd
 ```
 
 ## Project Structure
@@ -85,17 +113,44 @@ MUTEX/
 │   ├── BRANCH_PLAN.md     # Development roadmap
 │   ├── BRANCH_1_SUMMARY.md # Branch 1 completion summary
 │   ├── BRANCH_2_SUMMARY.md # Branch 2 completion summary
+│   ├── BRANCH_3_SUMMARY.md # Branch 3 completion summary
 │   ├── BRANCH_4_SUMMARY.md # Branch 4 completion summary
+│   ├── BRANCH_5_SUMMARY.md # Branch 5 completion summary
 │   ├── NETFILTER_HOOKS.md # Netfilter integration documentation
 │   ├── PDM-sequence.md    # Project scheduling
-│   └── COMMIT_CONVENTIONS.md
+│   ├── COMMIT_CONVENTIONS.md
+│   └── TESTING.md
 ├── src/                    # Source code
 │   ├── module/            # Kernel module
-│   │   ├── kproxy.c       # Main module implementation
-│   │   ├── test_syscall.c # Userspace syscall test program
+│   │   ├── mutex_proxy.c  # Main module implementation
+│   │   ├── mutex_proxy.h  # Module header
+│   │   ├── syscall.c      # System call implementation
+│   │   ├── file_ops.c     # File descriptor operations
 │   │   ├── Makefile       # Build configuration
 │   │   └── test_module.sh # Automated testing
+│   ├── userspace/         # Userspace components
+│   │   ├── lib/           # libmutex library
+│   │   │   ├── libmutex.h # Public API header
+│   │   │   ├── libmutex.c # Library implementation
+│   │   │   ├── API.md     # API documentation
+│   │   │   └── Makefile
+│   │   ├── cli/           # mprox CLI tool
+│   │   │   ├── mprox.c
+│   │   │   └── Makefile
+│   │   ├── examples/      # Example programs
+│   │   │   ├── simple_proxy.c
+│   │   │   ├── multi_fd.c
+│   │   │   ├── poll_example.c
+│   │   │   ├── README.md
+│   │   │   └── Makefile
+│   │   ├── Makefile       # Top-level build
+│   │   └── README.md      # Userspace documentation
 │   └── README.md          # Source documentation
+├── linux/                 # Linux kernel UAPI headers
+│   └── include/
+│       └── uapi/
+│           └── linux/
+│               └── mutex_proxy.h  # Kernel-userspace interface
 ├── CONTRIBUTING.md         # Contribution guidelines
 └── README.md              # This file
 ```
@@ -120,17 +175,28 @@ MUTEX/
 - ✅ **Global context management with RCU**
 - ✅ **Per-context packet interception control**
 - ✅ **Debugging and performance optimization infrastructure**
+- ✅ **Custom system call registration (mprox_create)**
+- ✅ **File descriptor-based proxy interface**
+- ✅ **Anonymous inode implementation for proxy fds**
+- ✅ **ioctl commands (enable/disable/config/stats)**
+- ✅ **Per-fd proxy configuration and state**
+- ✅ **Userspace C library (libmutex)**
+- ✅ **Command-line tool (mprox)**
+- ✅ **Example programs and comprehensive documentation**
+- ✅ **pkg-config support for library**
+- ✅ **Multiple proxy servers per fd (up to 8)**
+- ✅ **Proxy selection strategies (round-robin, failover, random)**
+- ✅ **Comprehensive configuration validation**
+- ✅ **Thread-safe configuration operations**
 
 ### In Development
-- 🚧 Userspace interface library
-- 🚧 ioctl interface implementation
+- 🚧 Netfilter hooks for packet interception
 
 ### Planned (See [BRANCH_PLAN.md](docs/BRANCH_PLAN.md))
 - Connection tracking integration
 - Packet rewriting and NAT
 - SOCKS and HTTP proxy protocol support
 - Transparent proxying
-- Connection tracking and management
 - Performance optimization
 - Security hardening
 - IPv6 support
@@ -172,12 +238,8 @@ See [docs/COMMIT_CONVENTIONS.md](docs/COMMIT_CONVENTIONS.md) for details.
 - **[Netfilter Hooks](docs/NETFILTER_HOOKS.md):** Netfilter integration architecture and usage
 - **[Contributing Guide](CONTRIBUTING.md):** How to contribute to the project
 - **[Source Documentation](src/README.md):** Technical documentation for the codebase
-
-## Testing
-
-The module has been tested on:
-- Kernel version: 6.12.57+deb13-amd64
-- Distribution: Debian-based systems
+- **[Userspace Library API](src/userspace/lib/API.md):** Complete libmutex API reference
+- **[Userspace Guide](src/userspace/README.md):** Building and using userspace components
 
 ### Running Tests
 
@@ -204,7 +266,11 @@ GPL (GNU General Public License)
 ## Project Timeline
 
 - **Total Duration:** ~31 weeks (7.5 months)
-- **Milestone 1:** Foundation Complete ✅ (Week 3)
+- **Milestone 1:** Foundation Complete ✅ (Week 5)
+  - Branch 1: Module structure ✅
+  - Branch 2: System call and fd operations ✅
+  - Branch 3: Userspace interface ✅
+  - Branch 5: Proxy configuration ✅
 - **Milestone 2:** Core Networking (Week 10)
 - **Milestone 3:** Proxy Protocols (Week 15)
 - **Milestone 4:** Production Ready (Week 23)

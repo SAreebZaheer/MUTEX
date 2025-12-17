@@ -18,8 +18,9 @@ KDIR := /lib/modules/$(shell uname -r)/build
 BUILD_DIR := $(CURDIR)/build
 SRC_DIR := $(CURDIR)
 
-# Use system's default gcc
-export CC := gcc
+# Compiler - defaults to gcc, can be overridden (e.g., make CC=gcc-12)
+CC ?= gcc
+export CC
 
 # Default target - build the module
 all:
@@ -223,5 +224,12 @@ help:
 	@echo "  make help     - Display this help message"
 	@echo ""
 	@echo "Build output directory: $(BUILD_DIR)"
+	@echo "Options:"
+	@echo "  CC=<compiler> - Specify compiler (default: gcc)"
+	@echo ""
+	@echo "Examples:"
+	@echo "  make                 # Use default gcc"
+	@echo "  make CC=gcc-12       # Use gcc-12"
+	@echo "  make CC=clang        # Use clang"
 
 .PHONY: all clean install load unload reload info status log help test test-build test-module test-netfilter
