@@ -95,24 +95,7 @@ Branch 3 (`feature/userspace-interface`) has been successfully implemented accor
 
 ## Architecture
 
-The implementation follows the file descriptor-based design from Branch 2:
-
-```
-User Program
-    ↓
-libmutex.so (high-level API)
-    ↓
-mprox_create() syscall → returns fd
-    ↓
-File operations on fd:
-  - ioctl(fd, MUTEX_PROXY_IOC_ENABLE)
-  - ioctl(fd, MUTEX_PROXY_IOC_SET_CONFIG, &config)
-  - ioctl(fd, MUTEX_PROXY_IOC_GET_STATS, &stats)
-  - poll(fd, ...)
-  - close(fd)
-    ↓
-Kernel Module (Branch 2)
-```
+The implementation follows the file descriptor-based design from Branch 2, with user programs calling libmutex.so which invokes the mprox_create() syscall to get a file descriptor, then performs file operations (ioctl, poll, close) on that fd which are handled by the kernel module.
 
 ## API Functions Implemented
 

@@ -24,62 +24,20 @@
 
 ### 1. System Call Table Hooking
 
-**Location:** [kproxy.c](../src/module/kproxy.c#L153-L201)
-
 Implemented `find_syscall_table()` function that:
 - Uses kprobes to locate `kallsyms_lookup_name` on kernels >= 5.7
 - Finds the `sys_call_table` address dynamically
 - Handles both modern (>= 5.7) and legacy kernel versions
 - Returns pointer to syscall table or NULL on failure
 
-**Key Code:**
-```c
-static unsigned long **find_syscall_table(void)
-{
-	typedef unsigned long (*kallsyms_lookup_name_t)(const char *name);
-	kallsyms_lookup_name_t kallsyms_lookup_name_func;
-	struct kprobe kp = {
-		.symbol_name = "kallsyms_lookup_name"
-	};
-	
-	if (register_kprobe(&kp) < 0) {
-		pr_err("KPROXY: failed to register kprobe\n");
-		return NULL;
-	}
-	
-	kallsyms_lookup_name_func = (kallsyms_lookup_name_t)kp.addr;
-	unregister_kprobe(&kp);
-	
-	table = (unsigned long **)kallsyms_lookup_name_func("sys_call_table");
-	return table;
-}
-```
-
 ### 2. Write Protection Management
-
-**Location:** [kproxy.c](../src/module/kproxy.c#L55-L71)
 
 Implemented CR0 register manipulation:
 - `disable_write_protection()` - Clears WP bit (bit 16) in CR0
 - `enable_write_protection()` - Sets WP bit in CR0
 - Allows temporary modification of read-only syscall table
 
-**Key Code:**
-```c
-static inline void disable_write_protection(void)
-{
-	write_cr0_forced(read_cr0() & (~0x10000));
-}
-
-static inline void enable_write_protection(void)
-{
-	write_cr0_forced(read_cr0() | 0x10000);
-}
-```
-
 ### 3. Architecture-Specific Syscall Numbers
-
-**Location:** [kproxy.c](../src/module/kproxy.c#L31-L41)
 
 Defined syscall numbers for different architectures:
 - **x86_64:** 335 (user-defined range)
@@ -87,23 +45,7 @@ Defined syscall numbers for different architectures:
 - **aarch64 (ARM64):** 400
 - **Default:** 335 with compiler warning
 
-**Implementation:**
-```c
-#if defined(__x86_64__)
-	#define __NR_kproxy_enable 335
-#elif defined(__i386__)
-	#define __NR_kproxy_enable 358
-#elif defined(__aarch64__)
-	#define __NR_kproxy_enable 400
-#else
-	#warning "Architecture not explicitly supported"
-	#define __NR_kproxy_enable 335
-#endif
-```
-
 ### 4. Custom Syscall Implementation
-
-**Location:** [kproxy.c](../src/module/kproxy.c#L93-L145)
 
 Implemented `kproxy_enable_syscall()` with:
 - **Capability checking:** Validates CAP_NET_ADMIN
@@ -112,69 +54,17 @@ Implemented `kproxy_enable_syscall()` with:
 - **Parameter validation:** Checks enable flag (0-1) and port range (1-65535)
 - **Logging:** Records PID, UID, and operation details
 
-**Key Features:**
-```c
-asmlinkage long kproxy_enable_syscall(struct kproxy_config __user *config)
-{
-	/* Check CAP_NET_ADMIN capability */
-	if (!capable(CAP_NET_ADMIN)) {
-		pr_warn("KPROXY: syscall denied - CAP_NET_ADMIN required\n");
-		return -EPERM;
-	}
-	
-	/* Copy and validate configuration from userspace */
-	ret = copy_from_user(&kconfig, config, sizeof(struct kproxy_config));
-	if (ret != 0) {
-		return -EFAULT;
-	}
-	
-	/* Validate parameters */
-	if (kconfig.enable > 1 || kconfig.proxy_port == 0 || 
-	    kconfig.proxy_port > 65535) {
-		return -EINVAL;
-	}
-	
-	/* Log invocation */
-	pr_info("KPROXY: syscall invoked by PID %d (UID %d)\n",
-		current->pid, current_uid().val);
-	
-	return 0;
-}
-```
-
 ### 5. Proxy Configuration Structure
 
-**Location:** [kproxy.c](../src/module/kproxy.c#L44-L49)
-
-```c
-struct kproxy_config {
-	unsigned int enable;		/* 0 = disable, 1 = enable */
-	unsigned int proxy_port;	/* Proxy server port */
-	char proxy_addr[16];		/* Proxy server IP address (IPv4) */
-};
-```
+Defined `kproxy_config` structure with enable flag, proxy port, and IP address fields.
 
 ### 6. Syscall Registration
 
-**Location:** [kproxy.c](../src/module/kproxy.c#L203-L227)
-
-Implemented `register_kproxy_syscall()`:
-- Finds syscall table
-- Saves original syscall pointer
-- Disables write protection
-- Installs custom syscall
-- Re-enables write protection
+Implemented `register_kproxy_syscall()` function that finds the syscall table, saves the original syscall pointer, temporarily disables write protection, installs the custom syscall, and re-enables write protection.
 
 ### 7. Cleanup and Unregistration
 
-**Location:** [kproxy.c](../src/module/kproxy.c#L229-L254)
-
-Implemented `unregister_kproxy_syscall()`:
-- Checks if syscall table pointer is valid
-- Disables write protection
-- Restores original syscall
-- Re-enables write protection
-- Logs unregistration
+Implemented `unregister_kproxy_syscall()` function that validates the syscall table pointer, temporarily disables write protection, restores the original syscall, re-enables write protection, and logs the unregistration.
 
 ---
 
