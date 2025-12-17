@@ -712,12 +712,19 @@ static int __init mutex_proxy_init(void)
 /**
  * mutex_proxy_exit - Module cleanup
  *
- * Called when the module is unloaded. Cleans up all resources.
- * All active file descriptors should be closed before unloading.
+ * Called when the module is unloaded. Unregisters netfilter hooks and
+ * cleans up all resources. All active file descriptors should be closed
+ * before unloading.
  */
 static void __exit mutex_proxy_exit(void)
 {
-	pr_info("mutex_proxy: module unloaded\n");
+	pr_info("mutex_proxy: unloading module\n");
+
+	/* Unregister netfilter hooks */
+	nf_unregister_net_hooks(&init_net, nf_hooks, ARRAY_SIZE(nf_hooks));
+	pr_info("mutex_proxy: unregistered netfilter hooks\n");
+
+	pr_info("mutex_proxy: module unloaded successfully\n");
 }
 
 module_init(mutex_proxy_init);
