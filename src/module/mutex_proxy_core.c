@@ -37,6 +37,11 @@ static const struct file_operations mutex_proxy_fops;
 static LIST_HEAD(proxy_contexts);
 static DEFINE_SPINLOCK(proxy_contexts_lock);
 
+/* Module parameter for debug logging */
+static bool debug = false;
+module_param(debug, bool, 0644);
+MODULE_PARM_DESC(debug, "Enable debug logging");
+
 /* Module parameters for runtime hook priority adjustment */
 static int pre_routing_priority = MUTEX_PROXY_PRI_FIRST;
 module_param(pre_routing_priority, int, 0644);
@@ -789,7 +794,8 @@ static unsigned int mutex_proxy_pre_routing(void *priv,
 
 	/* Mark packet for proxy handling */
 	skb->mark = 0x1;  /* Custom mark for proxied packets */
-	pr_debug("mutex_proxy: PRE_ROUTING - marked packet for proxying\n");
+	if (debug)
+		pr_info("mutex_proxy: PRE_ROUTING - marked packet for proxying\n");
 
 	/* Protocol-specific debug logging */
 	switch (info.protocol) {
@@ -844,7 +850,8 @@ static unsigned int mutex_proxy_post_routing(void *priv,
 
 	/* Check if packet is marked for proxying */
 	if (skb->mark == 0x1) {
-		pr_debug("mutex_proxy: POST_ROUTING - processing marked packet\n");
+		if (debug)
+			pr_info("mutex_proxy: POST_ROUTING - processing marked packet\n");
 		/* TODO: Rewrite packet headers
 		 * - Replace source address/port with proxy server
 		 * - Update checksums
@@ -906,7 +913,8 @@ static unsigned int mutex_proxy_local_out(void *priv,
 	if (mutex_proxy_should_intercept(skb)) {
 		/* Mark for proxying */
 		skb->mark = 0x1;
-		pr_debug("mutex_proxy: LOCAL_OUT - marked local packet for proxying\n");
+		if (debug)
+			pr_info("mutex_proxy: LOCAL_OUT - marked local packet for proxying\n");
 	}
 
 	/* Protocol-specific debug logging */
