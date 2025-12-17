@@ -504,6 +504,28 @@ static const struct file_operations mutex_proxy_fops = {
 	.llseek			= noop_llseek,
 };
 
+/* Netfilter hook operations */
+static struct nf_hook_ops nf_hooks[] = {
+	{
+		.hook		= mutex_proxy_pre_routing,
+		.pf		= NFPROTO_IPV4,
+		.hooknum	= NF_INET_PRE_ROUTING,
+		.priority	= NF_IP_PRI_FIRST,
+	},
+	{
+		.hook		= mutex_proxy_post_routing,
+		.pf		= NFPROTO_IPV4,
+		.hooknum	= NF_INET_POST_ROUTING,
+		.priority	= NF_IP_PRI_LAST,
+	},
+	{
+		.hook		= mutex_proxy_local_out,
+		.pf		= NFPROTO_IPV4,
+		.hooknum	= NF_INET_LOCAL_OUT,
+		.priority	= NF_IP_PRI_FIRST,
+	},
+};
+
 /**
  * mutex_proxy_init - Module initialization
  *
