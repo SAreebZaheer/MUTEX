@@ -775,18 +775,21 @@ static unsigned int mutex_proxy_pre_routing(void *priv,
 	}
 
 	/* Extract packet information (handles TCP/UDP/ICMP) */
-	if (!extract_packet_info(skb, &info)) {
-		/* Unsupported protocol or malformed packet */
+	if (unlikely(!extract_packet_info(skb, &info))) {
+		/* Unsupported protocol or malformed packet - early exit */
 		pr_debug_ratelimited("mutex_proxy: PRE_ROUTING - failed to extract packet info\n");
 		return NF_ACCEPT;
 	}
 
-	/* Check if this packet should be proxied */
-	if (mutex_proxy_should_intercept(skb)) {
-		/* Mark packet for proxy handling */
-		skb->mark = 0x1;  /* Custom mark for proxied packets */
-		pr_debug("mutex_proxy: PRE_ROUTING - marked packet for proxying\n");
+	/* Check if this packet should be proxied - early exit for non-proxied */
+	if (likely(!mutex_proxy_should_intercept(skb))) {
+		/* Most packets won't be proxied - fast path */
+		return NF_ACCEPT;
 	}
+
+	/* Mark packet for proxy handling */
+	skb->mark = 0x1;  /* Custom mark for proxied packets */
+	pr_debug("mutex_proxy: PRE_ROUTING - marked packet for proxying\n");
 
 	/* Protocol-specific debug logging */
 	switch (info.protocol) {
