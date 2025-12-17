@@ -2,6 +2,8 @@
 
 This directory contains the source code for the MUTEX kernel module and associated userspace utilities.
 
+Any mention of MUTEX is a direct reference to the development team's name unless specified explicitly.
+
 ## Directory Structure
 
 ```

@@ -2,6 +2,8 @@
 
 A kernel-level proxy service module for Linux that provides transparent network proxying through kernel space.
 
+Any mention of MUTEX is a direct reference to the development team's name unless specified explicitly.
+
 ## Project Overview
 
 MUTEX is a loadable kernel module (LKM) that creates a kernel-level proxy service by hooking into the Linux network stack. This approach eliminates the need for user-level proxying typically required by VPNs and proxy services, providing better performance and transparency.
