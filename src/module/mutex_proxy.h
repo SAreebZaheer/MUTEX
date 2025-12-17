@@ -52,6 +52,10 @@ struct mutex_proxy_context {
 	struct hlist_head *conn_table;
 	unsigned int conn_table_size;
 
+	/* Proxy selection state */
+	unsigned int next_server_index;	/* For round-robin selection */
+	unsigned long last_selection_jiffies; /* Timestamp of last selection */
+
 	/* Event notification support */
 	wait_queue_head_t wait;		/* For poll/select/epoll */
 	unsigned int event_count;	/* Event counter */
@@ -64,6 +68,11 @@ struct mutex_proxy_context {
 struct mutex_proxy_context *mutex_proxy_ctx_alloc(unsigned int flags);
 void mutex_proxy_ctx_get(struct mutex_proxy_context *ctx);
 void mutex_proxy_ctx_put(struct mutex_proxy_context *ctx);
+
+/* Proxy selection functions */
+int mutex_proxy_select_server(struct mutex_proxy_context *ctx);
+int mutex_proxy_validate_server(const struct mutex_proxy_server *server);
+int mutex_proxy_validate_config(const struct mutex_proxy_config *config);
 
 /* System call prototype - mprox_create (syscall 471) */
 asmlinkage long sys_mutex_proxy_create(unsigned int flags);
