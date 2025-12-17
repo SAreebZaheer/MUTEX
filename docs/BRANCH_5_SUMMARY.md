@@ -126,21 +126,44 @@ $ make clean && make
 - ✅ No errors in proxy configuration code
 - ✅ BTF generation skipped (vmlinux unavailable - normal)
 
-### Test Program
+### Test Program Status
+
+**⚠️ Testing Blocked - Kernel Compilation Required**
+
+The test program has been developed but cannot execute until the modified kernel is compiled and deployed:
+
 ```bash
-$ gcc -o test_config test_config.c
-$ sudo insmod mutex_proxy.ko
-$ sudo ./test_config
+$ gcc -o test_config test_config.c   # ✅ Compiles successfully
+$ sudo insmod mutex_proxy.ko          # ✅ Module loads successfully  
+$ sudo ./test_config                  # ❌ Fails: "Function not implemented"
 ```
 
-Expected output demonstrates:
-1. File descriptor creation
-2. Multi-server configuration
-3. Configuration readback
-4. Proxy enable/disable
+**Root Cause**: The `mutex_proxy_create` syscall (number 471) has been defined in the UAPI headers and referenced in the module, but the actual syscall entry point must be compiled into the kernel itself. Syscalls cannot be added via loadable kernel modules.
+
+**Current Status**:
+- ✅ UAPI structures defined in `linux/include/uapi/linux/mutex_proxy.h`
+- ✅ Module implementation complete (`mutex_proxy.ko`)
+- ✅ Test program compiled (`test_config`)
+- ❌ Kernel syscall table not modified (requires kernel rebuild)
+- ❌ Custom kernel not compiled
+- ❌ Custom kernel not installed/booted
+
+**Required Steps for Testing**:
+1. Add syscall entry to `linux/arch/x86/entry/syscalls/syscall_64.tbl`
+2. Compile the modified Linux kernel (~30-60+ minutes)
+3. Install the new kernel image and modules
+4. Reboot into the custom kernel
+5. Load `mutex_proxy.ko` module
+6. Execute `test_config` program
+
+**Expected Test Output** (once kernel is deployed):
+1. File descriptor creation via syscall 471
+2. Multi-server configuration (3 servers: SOCKS5, HTTP, HTTPS)
+3. Configuration readback validation
+4. Proxy enable/disable operations
 5. Statistics retrieval
-6. Strategy changes
-7. ioctl-based operations
+6. Selection strategy changes (round-robin → failover → random)
+7. ioctl-based configuration operations
 
 ## Configuration Examples
 
@@ -222,9 +245,11 @@ Branch 5 successfully implements comprehensive proxy configuration management wi
 
 The implementation follows kernel coding standards, uses proper locking, and provides a clean, maintainable foundation for advanced routing and load balancing features in future branches.
 
+**Testing Status**: Implementation complete but runtime testing blocked pending custom kernel compilation and deployment. The module compiles successfully and the test program is ready, but the syscall cannot execute until the modified kernel is built and installed on the system.
+
 ---
 
 **Implementation Date**: December 17, 2025  
 **Branch**: feature/proxy-configuration  
-**Status**: ✅ Complete and tested  
+**Status**: ✅ Implementation complete | ⚠️ Testing pending kernel deployment  
 **Next Branch**: Branch 6 (connection-tracking)
