@@ -44,6 +44,11 @@ struct mutex_proxy_context {
 	struct mutex_proxy_config config;
 	struct mutex_proxy_stats stats;
 
+	/* Error statistics */
+	atomic64_t errors_invalid_packets;
+	atomic64_t errors_memory_alloc;
+	atomic64_t errors_protocol;
+
 	spinlock_t lock;		/* Protects this structure */
 	atomic_t enabled;		/* Is proxy enabled? */
 

@@ -89,6 +89,11 @@ struct mutex_proxy_context *mutex_proxy_ctx_alloc(unsigned int flags)
 	atomic_set(&ctx->enabled, 0);
 	atomic_set(&ctx->refcount, 1);
 
+	/* Initialize error counters */
+	atomic64_set(&ctx->errors_invalid_packets, 0);
+	atomic64_set(&ctx->errors_memory_alloc, 0);
+	atomic64_set(&ctx->errors_protocol, 0);
+
 	/* Store owner process credentials */
 	ctx->owner_pid = current->pid;
 	ctx->owner_uid = current_uid();
@@ -763,13 +768,16 @@ static unsigned int mutex_proxy_pre_routing(void *priv,
 {
 	struct packet_info info;
 
-	/* Validate skb */
-	if (!skb)
+	/* Validate skb - NULL check */
+	if (unlikely(!skb)) {
+		pr_err_ratelimited("mutex_proxy: PRE_ROUTING - NULL skb\n");
 		return NF_ACCEPT;
+	}
 
 	/* Extract packet information (handles TCP/UDP/ICMP) */
 	if (!extract_packet_info(skb, &info)) {
 		/* Unsupported protocol or malformed packet */
+		pr_debug_ratelimited("mutex_proxy: PRE_ROUTING - failed to extract packet info\n");
 		return NF_ACCEPT;
 	}
 
@@ -819,13 +827,17 @@ static unsigned int mutex_proxy_post_routing(void *priv,
 {
 	struct packet_info info;
 
-	/* Validate skb */
-	if (!skb)
+	/* Validate skb - NULL check */
+	if (unlikely(!skb)) {
+		pr_err_ratelimited("mutex_proxy: POST_ROUTING - NULL skb\n");
 		return NF_ACCEPT;
+	}
 
 	/* Extract packet information */
-	if (!extract_packet_info(skb, &info))
+	if (!extract_packet_info(skb, &info)) {
+		pr_debug_ratelimited("mutex_proxy: POST_ROUTING - failed to extract packet info\n");
 		return NF_ACCEPT;
+	}
 
 	/* Check if packet is marked for proxying */
 	if (skb->mark == 0x1) {
@@ -875,13 +887,17 @@ static unsigned int mutex_proxy_local_out(void *priv,
 {
 	struct packet_info info;
 
-	/* Validate skb */
-	if (!skb)
+	/* Validate skb - NULL check */
+	if (unlikely(!skb)) {
+		pr_err_ratelimited("mutex_proxy: LOCAL_OUT - NULL skb\n");
 		return NF_ACCEPT;
+	}
 
 	/* Extract packet information */
-	if (!extract_packet_info(skb, &info))
+	if (!extract_packet_info(skb, &info)) {
+		pr_debug_ratelimited("mutex_proxy: LOCAL_OUT - failed to extract packet info\n");
 		return NF_ACCEPT;
+	}
 
 	/* Check if originating process has active proxy fd */
 	if (mutex_proxy_should_intercept(skb)) {
