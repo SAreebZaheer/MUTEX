@@ -62,9 +62,14 @@ struct mutex_proxy_context *mutex_proxy_ctx_alloc(unsigned int flags)
 
 	/* Initialize configuration with defaults */
 	ctx->config.version = 1;
-	ctx->config.proxy_type = 0;
-	ctx->config.proxy_port = 0;
+	ctx->config.num_servers = 0;
+	ctx->config.selection_strategy = PROXY_SELECT_ROUND_ROBIN;
+	ctx->config.current_server = 0;
 	ctx->config.flags = 0;
+
+	/* Initialize proxy selection state */
+	ctx->next_server_index = 0;
+	ctx->last_selection_jiffies = jiffies;
 
 	/* Initialize statistics to zero (already done by kzalloc) */
 
@@ -194,15 +199,199 @@ static int mutex_proxy_create_fd(struct mutex_proxy_context *ctx,
  */
 
 /**
- * mutex_proxy_read - Read statistics from proxy file descriptor
+ * mutex_proxy_validate_server - Validate a single proxy server configuration
+ * @server: Server configuration to validate
+ *
+ * Validates that the proxy server configuration has valid values for all fields.
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+int mutex_proxy_validate_server(const struct mutex_proxy_server *server)
+{
+	/* Check proxy type */
+	if (server->proxy_type < 1 || server->proxy_type > PROXY_TYPE_MAX) {
+		pr_warn("mutex_proxy: invalid proxy type %u\n", server->proxy_type);
+		return -EINVAL;
+	}
+
+	/* Check proxy port */
+	if (server->proxy_port == 0 || server->proxy_port > 65535) {
+		pr_warn("mutex_proxy: invalid proxy port %u\n", server->proxy_port);
+		return -EINVAL;
+	}
+
+	/* Validate IPv4 address (if not IPv6) */
+	if (!(server->flags & PROXY_CONFIG_IPV6)) {
+		/* Check if IPv4 address is not all zeros */
+		if (server->proxy_addr[0] == 0 && server->proxy_addr[1] == 0 &&
+		    server->proxy_addr[2] == 0 && server->proxy_addr[3] == 0) {
+			pr_warn("mutex_proxy: invalid IPv4 address (all zeros)\n");
+			return -EINVAL;
+		}
+	}
+
+	return 0;
+}
+
+/**
+ * mutex_proxy_validate_config - Validate entire proxy configuration
+ * @config: Configuration to validate
+ *
+ * Validates the complete proxy configuration including all servers.
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+int mutex_proxy_validate_config(const struct mutex_proxy_config *config)
+{
+	unsigned int i;
+	int ret;
+
+	/* Check version */
+	if (config->version != 1) {
+		pr_warn("mutex_proxy: invalid config version %u\n", config->version);
+		return -EINVAL;
+	}
+
+	/* Check number of servers */
+	if (config->num_servers == 0) {
+		pr_warn("mutex_proxy: no proxy servers configured\n");
+		return -EINVAL;
+	}
+
+	if (config->num_servers > MUTEX_PROXY_MAX_SERVERS) {
+		pr_warn("mutex_proxy: too many proxy servers (%u > %u)\n",
+			config->num_servers, MUTEX_PROXY_MAX_SERVERS);
+		return -EINVAL;
+	}
+
+	/* Check selection strategy */
+	if (config->selection_strategy < PROXY_SELECT_ROUND_ROBIN ||
+	    config->selection_strategy > PROXY_SELECT_RANDOM) {
+		pr_warn("mutex_proxy: invalid selection strategy %u\n",
+			config->selection_strategy);
+		return -EINVAL;
+	}
+
+	/* Validate each server */
+	for (i = 0; i < config->num_servers; i++) {
+		ret = mutex_proxy_validate_server(&config->servers[i]);
+		if (ret < 0) {
+			pr_warn("mutex_proxy: server %u validation failed\n", i);
+			return ret;
+		}
+	}
+
+	return 0;
+}
+
+/**
+ * mutex_proxy_select_server - Select next proxy server based on strategy
+ * @ctx: Proxy context
+ *
+ * Selects the next proxy server to use based on the configured selection
+ * strategy (round-robin, failover, random). Updates ctx->config.current_server.
+ *
+ * Must be called with ctx->lock held.
+ *
+ * Return: Index of selected server, or negative error code on failure
+ */
+int mutex_proxy_select_server(struct mutex_proxy_context *ctx)
+{
+	unsigned int i, selected;
+	unsigned int num_active = 0;
+
+	if (ctx->config.num_servers == 0) {
+		pr_warn("mutex_proxy: no servers configured\n");
+		return -ENOENT;
+	}
+
+	/* Count active servers */
+	for (i = 0; i < ctx->config.num_servers; i++) {
+		if (ctx->config.servers[i].flags & PROXY_CONFIG_ACTIVE)
+			num_active++;
+	}
+
+	if (num_active == 0) {
+		pr_warn("mutex_proxy: no active servers available\n");
+		return -EHOSTUNREACH;
+	}
+
+	switch (ctx->config.selection_strategy) {
+	case PROXY_SELECT_ROUND_ROBIN:
+		/* Find next active server in round-robin fashion */
+		selected = ctx->next_server_index;
+		for (i = 0; i < ctx->config.num_servers; i++) {
+			selected = (ctx->next_server_index + i) % ctx->config.num_servers;
+			if (ctx->config.servers[selected].flags & PROXY_CONFIG_ACTIVE) {
+				ctx->next_server_index = (selected + 1) % ctx->config.num_servers;
+				ctx->config.current_server = selected;
+				pr_debug("mutex_proxy: round-robin selected server %u\n", selected);
+				return selected;
+			}
+		}
+		break;
+
+	case PROXY_SELECT_FAILOVER:
+		/* Select first active server by priority */
+		selected = 0;
+		for (i = 0; i < ctx->config.num_servers; i++) {
+			if (!(ctx->config.servers[i].flags & PROXY_CONFIG_ACTIVE))
+				continue;
+
+			if (selected == 0 ||
+			    ctx->config.servers[i].priority < ctx->config.servers[selected].priority) {
+				selected = i;
+			}
+		}
+		ctx->config.current_server = selected;
+		pr_debug("mutex_proxy: failover selected server %u (priority %u)\n",
+			 selected, ctx->config.servers[selected].priority);
+		return selected;
+
+	case PROXY_SELECT_RANDOM:
+		/* Select random active server */
+		{
+			unsigned int random_val;
+			unsigned int active_count = 0;
+
+			get_random_bytes(&random_val, sizeof(random_val));
+			random_val %= num_active;
+
+			for (i = 0; i < ctx->config.num_servers; i++) {
+				if (!(ctx->config.servers[i].flags & PROXY_CONFIG_ACTIVE))
+					continue;
+
+				if (active_count == random_val) {
+					ctx->config.current_server = i;
+					pr_debug("mutex_proxy: random selected server %u\n", i);
+					return i;
+				}
+				active_count++;
+			}
+		}
+		break;
+
+	default:
+		pr_warn("mutex_proxy: unknown selection strategy %u\n",
+			ctx->config.selection_strategy);
+		return -EINVAL;
+	}
+
+	/* Should not reach here */
+	return -EINVAL;
+}
+
+/**
+ * mutex_proxy_read - Read configuration or statistics from proxy file descriptor
  * @file: File structure for the fd
  * @buf: User buffer to read data into
  * @count: Number of bytes to read
  * @ppos: File position (unused, always reads from beginning)
  *
- * Returns the current proxy statistics to userspace. This is thread-safe
- * and uses a spinlock to protect the statistics structure. Supports partial
- * reads if the buffer is smaller than the statistics structure.
+ * Returns the current proxy configuration or statistics to userspace.
+ * If count equals sizeof(stats), returns statistics; if count equals
+ * sizeof(config), returns configuration. This is thread-safe and uses
+ * a spinlock to protect the data structures.
  *
  * Return: Number of bytes read on success, negative error code on failure
  */
@@ -211,32 +400,53 @@ static ssize_t mutex_proxy_read(struct file *file, char __user *buf,
 {
 	struct mutex_proxy_context *ctx = file->private_data;
 	struct mutex_proxy_stats stats;
+	struct mutex_proxy_config config;
 	size_t to_copy;
 	unsigned long flags;
+	void *data_ptr;
+	size_t data_size;
 
 	if (!ctx)
 		return -EINVAL;
 
+	/* Determine what to read based on count */
+	if (count == sizeof(stats)) {
+		/* Reading statistics */
+		spin_lock_irqsave(&ctx->lock, flags);
+		memcpy(&stats, &ctx->stats, sizeof(stats));
+		spin_unlock_irqrestore(&ctx->lock, flags);
+
+		data_ptr = &stats;
+		data_size = sizeof(stats);
+	} else if (count == sizeof(config) || count >= sizeof(config)) {
+		/* Reading configuration */
+		spin_lock_irqsave(&ctx->lock, flags);
+		memcpy(&config, &ctx->config, sizeof(config));
+		spin_unlock_irqrestore(&ctx->lock, flags);
+
+		data_ptr = &config;
+		data_size = sizeof(config);
+	} else {
+		/* Invalid size */
+		pr_warn("mutex_proxy: invalid read size %zu (expected %zu or %zu)\n",
+			count, sizeof(stats), sizeof(config));
+		return -EINVAL;
+	}
+
 	/* If already read everything, return EOF */
-	if (*ppos >= sizeof(stats))
+	if (*ppos >= data_size)
 		return 0;
 
-	/* Copy current statistics under lock */
-	spin_lock_irqsave(&ctx->lock, flags);
-	memcpy(&stats, &ctx->stats, sizeof(stats));
-	spin_unlock_irqrestore(&ctx->lock, flags);
-
 	/* Calculate how much to copy */
-	to_copy = min(count, sizeof(stats) - (size_t)*ppos);
+	to_copy = min(count, data_size - (size_t)*ppos);
 
 	/* Copy to userspace */
-	if (copy_to_user(buf, ((char *)&stats) + *ppos, to_copy))
+	if (copy_to_user(buf, ((char *)data_ptr) + *ppos, to_copy))
 		return -EFAULT;
 
 	*ppos += to_copy;
 
-	pr_debug("mutex_proxy: read %zu bytes of statistics for PID %d\n",
-		 to_copy, ctx->owner_pid);
+	pr_debug("mutex_proxy: read %zu bytes for PID %d\n", to_copy, ctx->owner_pid);
 
 	return to_copy;
 }
@@ -249,8 +459,9 @@ static ssize_t mutex_proxy_read(struct file *file, char __user *buf,
  * @ppos: File position (unused, always writes to beginning)
  *
  * Updates the proxy configuration from userspace. This validates the
- * configuration (version, proxy type, port range) and atomically updates
- * the context under spinlock protection.
+ * complete configuration (version, proxy servers, selection strategy)
+ * and atomically updates the context under spinlock protection.
+ * Supports multiple proxy servers with automatic selection.
  *
  * Return: Number of bytes written on success, negative error code on failure
  */
@@ -260,6 +471,7 @@ static ssize_t mutex_proxy_write(struct file *file, const char __user *buf,
 	struct mutex_proxy_context *ctx = file->private_data;
 	struct mutex_proxy_config new_config;
 	unsigned long flags;
+	int ret;
 
 	if (!ctx)
 		return -EINVAL;
@@ -273,32 +485,31 @@ static ssize_t mutex_proxy_write(struct file *file, const char __user *buf,
 		return -EFAULT;
 
 	/* Validate configuration */
-	if (new_config.version != 1) {
-		pr_warn("mutex_proxy: invalid config version %u\n",
-			new_config.version);
-		return -EINVAL;
-	}
-
-	if (new_config.proxy_type < 1 ||
-	    new_config.proxy_type > PROXY_TYPE_MAX) {
-		pr_warn("mutex_proxy: invalid proxy type %u\n",
-			new_config.proxy_type);
-		return -EINVAL;
-	}
-
-	if (new_config.proxy_port == 0 || new_config.proxy_port > 65535) {
-		pr_warn("mutex_proxy: invalid proxy port %u\n",
-			new_config.proxy_port);
-		return -EINVAL;
+	ret = mutex_proxy_validate_config(&new_config);
+	if (ret < 0) {
+		pr_warn("mutex_proxy: configuration validation failed\n");
+		return ret;
 	}
 
 	/* Atomically update configuration under lock */
 	spin_lock_irqsave(&ctx->lock, flags);
 	memcpy(&ctx->config, &new_config, sizeof(new_config));
+
+	/* Reset selection state */
+	ctx->next_server_index = 0;
+	ctx->last_selection_jiffies = jiffies;
+
+	/* Select initial server */
+	ret = mutex_proxy_select_server(ctx);
 	spin_unlock_irqrestore(&ctx->lock, flags);
 
-	pr_debug("mutex_proxy: updated config for PID %d (type=%u, port=%u)\n",
-		 ctx->owner_pid, new_config.proxy_type, new_config.proxy_port);
+	if (ret < 0) {
+		pr_warn("mutex_proxy: failed to select server: %d\n", ret);
+		return ret;
+	}
+
+	pr_info("mutex_proxy: updated config for PID %d (%u servers, strategy=%u)\n",
+		ctx->owner_pid, new_config.num_servers, new_config.selection_strategy);
 
 	return sizeof(new_config);
 }
@@ -343,32 +554,31 @@ static long mutex_proxy_ioctl(struct file *file, unsigned int cmd,
 			return -EFAULT;
 
 		/* Validate configuration */
-		if (new_config.version != 1) {
-			pr_warn("mutex_proxy: ioctl: invalid config version %u\n",
-				new_config.version);
-			return -EINVAL;
-		}
-
-		if (new_config.proxy_type < 1 ||
-		    new_config.proxy_type > PROXY_TYPE_MAX) {
-			pr_warn("mutex_proxy: ioctl: invalid proxy type %u\n",
-				new_config.proxy_type);
-			return -EINVAL;
-		}
-
-		if (new_config.proxy_port == 0 || new_config.proxy_port > 65535) {
-			pr_warn("mutex_proxy: ioctl: invalid proxy port %u\n",
-				new_config.proxy_port);
-			return -EINVAL;
+		ret = mutex_proxy_validate_config(&new_config);
+		if (ret < 0) {
+			pr_warn("mutex_proxy: ioctl: configuration validation failed\n");
+			return ret;
 		}
 
 		/* Atomically update configuration */
 		spin_lock_irqsave(&ctx->lock, flags);
 		memcpy(&ctx->config, &new_config, sizeof(new_config));
+
+		/* Reset selection state */
+		ctx->next_server_index = 0;
+		ctx->last_selection_jiffies = jiffies;
+
+		/* Select initial server */
+		ret = mutex_proxy_select_server(ctx);
 		spin_unlock_irqrestore(&ctx->lock, flags);
 
-		pr_debug("mutex_proxy: ioctl: updated config for PID %d\n",
-			 ctx->owner_pid);
+		if (ret < 0) {
+			pr_warn("mutex_proxy: ioctl: failed to select server: %d\n", ret);
+			return ret;
+		}
+
+		pr_info("mutex_proxy: ioctl: updated config for PID %d\n", ctx->owner_pid);
+		ret = 0;
 		break;
 
 	case MUTEX_PROXY_IOC_GET_CONFIG:
