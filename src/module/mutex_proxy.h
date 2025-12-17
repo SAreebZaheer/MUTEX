@@ -16,6 +16,11 @@
 #include <linux/rcupdate.h>
 #include "../../linux/include/uapi/linux/mutex_proxy.h"
 
+/* Hook priority constants */
+#define MUTEX_PROXY_PRI_FIRST	NF_IP_PRI_FIRST
+#define MUTEX_PROXY_PRI_NORMAL	0
+#define MUTEX_PROXY_PRI_LAST	NF_IP_PRI_LAST
+
 /**
  * struct mutex_proxy_context - Per-fd private data structure
  * @config: Proxy configuration (type, port, address, etc.)

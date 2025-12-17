@@ -360,12 +360,14 @@ static long mutex_proxy_ioctl(struct file *file, unsigned int cmd,
 	switch (cmd) {
 	case MUTEX_PROXY_IOC_ENABLE:
 		atomic_set(&ctx->enabled, 1);
-		pr_info("mutex_proxy: enabled for PID %d\n", ctx->owner_pid);
+		pr_info("mutex_proxy: enabled hook processing for PID %d (fd will intercept packets when context list implemented)\n",
+			ctx->owner_pid);
 		break;
 
 	case MUTEX_PROXY_IOC_DISABLE:
 		atomic_set(&ctx->enabled, 0);
-		pr_info("mutex_proxy: disabled for PID %d\n", ctx->owner_pid);
+		pr_info("mutex_proxy: disabled hook processing for PID %d (packets will bypass this fd's rules)\n",
+			ctx->owner_pid);
 		break;
 
 	case MUTEX_PROXY_IOC_SET_CONFIG:
@@ -702,11 +704,15 @@ static bool mutex_proxy_should_intercept(struct sk_buff *skb)
 	if (!extract_packet_info(skb, &info))
 		return false;
 
-	/* TODO: Implement context lookup
-	 * - Check if any proxy contexts are enabled
-	 * - Match packet against configured proxy rules
+	/* TODO: Implement full context lookup (Commit 13)
+	 * For now, this always returns false until global context list
+	 * is implemented in commit 13. Once implemented, this function will:
+	 * - Iterate through all active proxy contexts
+	 * - Check if any context is enabled (atomic_read on enabled flag)
+	 * - Match packet against configured proxy rules in each context
 	 * - Check if packet is from/to a process with active proxy fd
 	 * - Support per-protocol filtering configuration
+	 * - Return true if ANY enabled context wants to proxy this packet
 	 */
 
 	return false;
