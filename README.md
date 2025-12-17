@@ -38,6 +38,15 @@ MUTEX is a loadable kernel module (LKM) that creates a kernel-level proxy servic
 - Comprehensive API documentation
 - Complete build system with install/uninstall support
 
+✅ **Branch 5 Complete:** `feature/proxy-configuration`
+- Multiple proxy servers per file descriptor (up to 8)
+- Three selection strategies: round-robin, failover, random
+- Comprehensive configuration validation
+- Thread-safe proxy configuration via write() and ioctl()
+- Per-server authentication support
+- Priority-based failover mechanism
+- IPv4/IPv6 address support
+
 🚧 **In Progress:** Branch 4 - `feature/netfilter-hooks`
 
 ## Quick Start
@@ -95,6 +104,7 @@ MUTEX/
 │   ├── BRANCH_1_SUMMARY.md # Branch 1 completion summary
 │   ├── BRANCH_2_SUMMARY.md # Branch 2 completion summary
 │   ├── BRANCH_3_SUMMARY.md # Branch 3 completion summary
+│   ├── BRANCH_5_SUMMARY.md # Branch 5 completion summary
 │   ├── PDM-sequence.md    # Project scheduling
 │   ├── COMMIT_CONVENTIONS.md
 │   └── TESTING.md
@@ -135,7 +145,7 @@ MUTEX/
 
 ## Features
 
-### Implemented (v0.3.0)
+### Implemented (v0.4.0)
 - ✅ Basic LKM structure with init/exit functions
 - ✅ Module metadata and licensing
 - ✅ Kernel logging infrastructure
@@ -150,16 +160,19 @@ MUTEX/
 - ✅ **Command-line tool (mprox)**
 - ✅ **Example programs and comprehensive documentation**
 - ✅ **pkg-config support for library**
+- ✅ **Multiple proxy servers per fd (up to 8)**
+- ✅ **Proxy selection strategies (round-robin, failover, random)**
+- ✅ **Comprehensive configuration validation**
+- ✅ **Thread-safe configuration operations**
 
 ### In Development
 - 🚧 Netfilter hooks for packet interception
-- 🚧 Proxy configuration in kernel space
 
 ### Planned (See [BRANCH_PLAN.md](docs/BRANCH_PLAN.md))
-- Netfilter hooks for packet interception
+- Connection tracking and management
+- Packet rewriting for proxy routing
 - SOCKS and HTTP proxy protocol support
 - Transparent proxying
-- Connection tracking and management
 - Performance optimization
 - Security hardening
 - IPv6 support
@@ -228,10 +241,11 @@ GPL (GNU General Public License)
 ## Project Timeline
 
 - **Total Duration:** ~31 weeks (7.5 months)
-- **Milestone 1:** Foundation Complete ✅ (Week 3.5)
+- **Milestone 1:** Foundation Complete ✅ (Week 5)
   - Branch 1: Module structure ✅
   - Branch 2: System call and fd operations ✅
   - Branch 3: Userspace interface ✅
+  - Branch 5: Proxy configuration ✅
 - **Milestone 2:** Core Networking (Week 10)
 - **Milestone 3:** Proxy Protocols (Week 15)
 - **Milestone 4:** Production Ready (Week 23)
@@ -245,5 +259,5 @@ For questions or issues, please open an issue on the project repository or conta
 ---
 
 **Last Updated:** December 17, 2025  
-**Version:** 0.3.0  
-**Status:** In Development - Foundation Complete (Branches 1-3)
+**Version:** 0.4.0  
+**Status:** In Development - Foundation Complete (Branches 1, 2, 3, 5)
