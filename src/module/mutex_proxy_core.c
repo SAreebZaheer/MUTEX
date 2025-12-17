@@ -527,6 +527,25 @@ static struct nf_hook_ops nf_hooks[] = {
 };
 
 /**
+ * mutex_proxy_should_intercept - Check if packet should be proxied
+ * @skb: Socket buffer containing the packet
+ *
+ * Determines if the current packet matches any active proxy configuration.
+ * Currently a placeholder that always returns false.
+ *
+ * Return: true if packet should be proxied, false otherwise
+ */
+static bool mutex_proxy_should_intercept(struct sk_buff *skb)
+{
+	/* TODO: Implement context lookup
+	 * - Check if any proxy contexts are enabled
+	 * - Match packet against configured proxy rules
+	 * - Check if packet is from/to a process with active proxy fd
+	 */
+	return false;
+}
+
+/**
  * mutex_proxy_pre_routing - Netfilter hook for incoming packets
  * @priv: Private data (unused)
  * @skb: Socket buffer containing the packet
@@ -565,11 +584,12 @@ static unsigned int mutex_proxy_pre_routing(void *priv,
 	if (!tcph)
 		return NF_ACCEPT;
 
-	/* TODO: Check if this connection should be proxied
-	 * - Look up active proxy contexts
-	 * - Check destination port/address against proxy config
-	 * - Mark connection for transparent proxying
-	 */
+	/* Check if this packet should be proxied */
+	if (mutex_proxy_should_intercept(skb)) {
+		/* Mark packet for proxy handling */
+		skb->mark = 0x1;  /* Custom mark for proxied packets */
+		pr_debug("mutex_proxy: PRE_ROUTING - marked packet for proxying\n");
+	}
 
 	pr_debug("mutex_proxy: PRE_ROUTING - src=%pI4:%u dst=%pI4:%u\n",
 		 &iph->saddr, ntohs(tcph->source),
@@ -617,11 +637,14 @@ static unsigned int mutex_proxy_post_routing(void *priv,
 	if (!tcph)
 		return NF_ACCEPT;
 
-	/* TODO: Modify packet headers if this is a proxied connection
-	 * - Rewrite source address/port to appear from proxy
-	 * - Update IP and TCP checksums
-	 * - Handle connection tracking state
-	 */
+	/* Check if packet is marked for proxying */
+	if (skb->mark == 0x1) {
+		pr_debug("mutex_proxy: POST_ROUTING - processing marked packet\n");
+		/* TODO: Rewrite packet headers
+		 * - Replace source address/port with proxy server
+		 * - Update checksums
+		 */
+	}
 
 	pr_debug("mutex_proxy: POST_ROUTING - src=%pI4:%u dst=%pI4:%u\n",
 		 &iph->saddr, ntohs(tcph->source),
@@ -669,11 +692,12 @@ static unsigned int mutex_proxy_local_out(void *priv,
 	if (!tcph)
 		return NF_ACCEPT;
 
-	/* TODO: Check if this connection should be redirected to proxy
-	 * - Check if destination matches configured proxy ports
-	 * - Redirect to local proxy socket
-	 * - Handle loopback optimization
-	 */
+	/* Check if originating process has active proxy fd */
+	if (mutex_proxy_should_intercept(skb)) {
+		/* Mark for proxying */
+		skb->mark = 0x1;
+		pr_debug("mutex_proxy: LOCAL_OUT - marked local packet for proxying\n");
+	}
 
 	pr_debug("mutex_proxy: LOCAL_OUT - src=%pI4:%u dst=%pI4:%u\n",
 		 &iph->saddr, ntohs(tcph->source),
