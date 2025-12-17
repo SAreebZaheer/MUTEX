@@ -20,11 +20,28 @@
 #include <linux/file.h>
 #include <linux/poll.h>
 #include <linux/module.h>
+#include <linux/netfilter.h>
+#include <linux/netfilter_ipv4.h>
+#include <linux/ip.h>
+#include <linux/tcp.h>
+#include <linux/udp.h>
+#include <linux/skbuff.h>
 #include "mutex_proxy.h"
 #include "mutex_proxy_meta.h"
 
 /* Forward declaration of file_operations - will be implemented incrementally */
 static const struct file_operations mutex_proxy_fops;
+
+/* Netfilter hook function declarations */
+static unsigned int mutex_proxy_pre_routing(void *priv,
+					     struct sk_buff *skb,
+					     const struct nf_hook_state *state);
+static unsigned int mutex_proxy_post_routing(void *priv,
+					      struct sk_buff *skb,
+					      const struct nf_hook_state *state);
+static unsigned int mutex_proxy_local_out(void *priv,
+					   struct sk_buff *skb,
+					   const struct nf_hook_state *state);
 
 /**
  * mutex_proxy_ctx_alloc - Allocate and initialize a new proxy context
