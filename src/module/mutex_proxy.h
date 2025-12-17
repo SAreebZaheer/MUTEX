@@ -16,6 +16,11 @@
 #include <linux/rcupdate.h>
 #include "../../linux/include/uapi/linux/mutex_proxy.h"
 
+/* Hook priority constants */
+#define MUTEX_PROXY_PRI_FIRST	NF_IP_PRI_FIRST
+#define MUTEX_PROXY_PRI_NORMAL	0
+#define MUTEX_PROXY_PRI_LAST	NF_IP_PRI_LAST
+
 /**
  * struct mutex_proxy_context - Per-fd private data structure
  * @config: Proxy configuration (type, port, address, etc.)
@@ -38,6 +43,11 @@
 struct mutex_proxy_context {
 	struct mutex_proxy_config config;
 	struct mutex_proxy_stats stats;
+
+	/* Error statistics */
+	atomic64_t errors_invalid_packets;
+	atomic64_t errors_memory_alloc;
+	atomic64_t errors_protocol;
 
 	spinlock_t lock;		/* Protects this structure */
 	atomic_t enabled;		/* Is proxy enabled? */
@@ -62,6 +72,7 @@ struct mutex_proxy_context {
 
 	struct rcu_head rcu;		/* For RCU-safe destruction */
 	atomic_t refcount;		/* Reference counting */
+	struct list_head list;		/* Global list linkage */
 };
 
 /* Context management functions */

@@ -20,11 +20,51 @@
 #include <linux/file.h>
 #include <linux/poll.h>
 #include <linux/module.h>
+#include <linux/netfilter.h>
+#include <linux/netfilter_ipv4.h>
+#include <linux/ip.h>
+#include <linux/tcp.h>
+#include <linux/udp.h>
+#include <linux/icmp.h>
+#include <linux/skbuff.h>
 #include "mutex_proxy.h"
 #include "mutex_proxy_meta.h"
 
 /* Forward declaration of file_operations - will be implemented incrementally */
 static const struct file_operations mutex_proxy_fops;
+
+/* Global list of all active proxy contexts */
+static LIST_HEAD(proxy_contexts);
+static DEFINE_SPINLOCK(proxy_contexts_lock);
+
+/* Module parameter for debug logging */
+static bool debug = false;
+module_param(debug, bool, 0644);
+MODULE_PARM_DESC(debug, "Enable debug logging");
+
+/* Module parameters for runtime hook priority adjustment */
+static int pre_routing_priority = MUTEX_PROXY_PRI_FIRST;
+module_param(pre_routing_priority, int, 0644);
+MODULE_PARM_DESC(pre_routing_priority, "Priority for PRE_ROUTING hook");
+
+static int post_routing_priority = MUTEX_PROXY_PRI_LAST;
+module_param(post_routing_priority, int, 0644);
+MODULE_PARM_DESC(post_routing_priority, "Priority for POST_ROUTING hook");
+
+static int local_out_priority = MUTEX_PROXY_PRI_FIRST;
+module_param(local_out_priority, int, 0644);
+MODULE_PARM_DESC(local_out_priority, "Priority for LOCAL_OUT hook");
+
+/* Netfilter hook function declarations */
+static unsigned int mutex_proxy_pre_routing(void *priv,
+					     struct sk_buff *skb,
+					     const struct nf_hook_state *state);
+static unsigned int mutex_proxy_post_routing(void *priv,
+					      struct sk_buff *skb,
+					      const struct nf_hook_state *state);
+static unsigned int mutex_proxy_local_out(void *priv,
+					   struct sk_buff *skb,
+					   const struct nf_hook_state *state);
 
 /**
  * mutex_proxy_ctx_alloc - Allocate and initialize a new proxy context
@@ -53,6 +93,11 @@ struct mutex_proxy_context *mutex_proxy_ctx_alloc(unsigned int flags)
 	/* Initialize atomic variables */
 	atomic_set(&ctx->enabled, 0);
 	atomic_set(&ctx->refcount, 1);
+
+	/* Initialize error counters */
+	atomic64_set(&ctx->errors_invalid_packets, 0);
+	atomic64_set(&ctx->errors_memory_alloc, 0);
+	atomic64_set(&ctx->errors_protocol, 0);
 
 	/* Store owner process credentials */
 	ctx->owner_pid = current->pid;
@@ -90,6 +135,14 @@ struct mutex_proxy_context *mutex_proxy_ctx_alloc(unsigned int flags)
 	/* Initialize wait queue for poll() support */
 	init_waitqueue_head(&ctx->wait);
 	ctx->event_count = 0;
+
+	/* Initialize list linkage */
+	INIT_LIST_HEAD(&ctx->list);
+
+	/* Add to global list of active contexts */
+	spin_lock(&proxy_contexts_lock);
+	list_add_rcu(&ctx->list, &proxy_contexts);
+	spin_unlock(&proxy_contexts_lock);
 
 	pr_debug("mutex_proxy: allocated context for PID %d (UID %u, GID %u)\n",
 		 ctx->owner_pid, from_kuid(&init_user_ns, ctx->owner_uid),
@@ -147,6 +200,12 @@ void mutex_proxy_ctx_put(struct mutex_proxy_context *ctx)
 	if (atomic_dec_and_test(&ctx->refcount)) {
 		pr_debug("mutex_proxy: scheduling context destruction for PID %d\n",
 			 ctx->owner_pid);
+
+		/* Remove from global list before RCU destruction */
+		spin_lock(&proxy_contexts_lock);
+		list_del_rcu(&ctx->list);
+		spin_unlock(&proxy_contexts_lock);
+
 		call_rcu(&ctx->rcu, mutex_proxy_ctx_destroy_rcu);
 	}
 }
@@ -540,12 +599,14 @@ static long mutex_proxy_ioctl(struct file *file, unsigned int cmd,
 	switch (cmd) {
 	case MUTEX_PROXY_IOC_ENABLE:
 		atomic_set(&ctx->enabled, 1);
-		pr_info("mutex_proxy: enabled for PID %d\n", ctx->owner_pid);
+		pr_info("mutex_proxy: enabled hook processing for PID %d (fd will intercept packets when context list implemented)\n",
+			ctx->owner_pid);
 		break;
 
 	case MUTEX_PROXY_IOC_DISABLE:
 		atomic_set(&ctx->enabled, 0);
-		pr_info("mutex_proxy: disabled for PID %d\n", ctx->owner_pid);
+		pr_info("mutex_proxy: disabled hook processing for PID %d (packets will bypass this fd's rules)\n",
+			ctx->owner_pid);
 		break;
 
 	case MUTEX_PROXY_IOC_SET_CONFIG:
@@ -697,29 +758,468 @@ static const struct file_operations mutex_proxy_fops = {
 	.llseek			= noop_llseek,
 };
 
+/* Netfilter hook operations - priorities set at module init */
+static struct nf_hook_ops nf_hooks[] = {
+	{
+		.hook		= mutex_proxy_pre_routing,
+		.pf		= NFPROTO_IPV4,
+		.hooknum	= NF_INET_PRE_ROUTING,
+		/* Priority set in mutex_proxy_init() */
+		/* PRE_ROUTING: First to see packets before NAT/routing decision */
+	},
+	{
+		.hook		= mutex_proxy_post_routing,
+		.pf		= NFPROTO_IPV4,
+		.hooknum	= NF_INET_POST_ROUTING,
+		/* Priority set in mutex_proxy_init() */
+		/* POST_ROUTING: Last to modify packets before they leave system */
+	},
+	{
+		.hook		= mutex_proxy_local_out,
+		.pf		= NFPROTO_IPV4,
+		.hooknum	= NF_INET_LOCAL_OUT,
+		/* Priority set in mutex_proxy_init() */
+		/* LOCAL_OUT: First to intercept locally generated connections */
+	},
+};
+
+/**
+ * struct packet_info - Protocol-independent packet information
+ * @protocol: IP protocol number (IPPROTO_TCP, IPPROTO_UDP, IPPROTO_ICMP)
+ * @saddr: Source IP address
+ * @daddr: Destination IP address
+ * @sport: Source port (TCP/UDP only)
+ * @dport: Destination port (TCP/UDP only)
+ * @icmp_type: ICMP type (ICMP only)
+ * @icmp_code: ICMP code (ICMP only)
+ */
+struct packet_info {
+	u8 protocol;
+	__be32 saddr;
+	__be32 daddr;
+	__be16 sport;
+	__be16 dport;
+	u8 icmp_type;
+	u8 icmp_code;
+};
+
+/**
+ * extract_tcp_info - Extract TCP packet information
+ * @skb: Socket buffer
+ * @iph: IP header
+ * @info: Output packet information structure
+ *
+ * Return: true on success, false on error
+ */
+static bool extract_tcp_info(struct sk_buff *skb, struct iphdr *iph,
+			      struct packet_info *info)
+{
+	struct tcphdr *tcph;
+
+	if (!pskb_may_pull(skb, iph->ihl * 4 + sizeof(struct tcphdr)))
+		return false;
+
+	tcph = tcp_hdr(skb);
+	if (!tcph)
+		return false;
+
+	info->protocol = IPPROTO_TCP;
+	info->saddr = iph->saddr;
+	info->daddr = iph->daddr;
+	info->sport = tcph->source;
+	info->dport = tcph->dest;
+
+	return true;
+}
+
+/**
+ * extract_udp_info - Extract UDP packet information
+ * @skb: Socket buffer
+ * @iph: IP header
+ * @info: Output packet information structure
+ *
+ * Return: true on success, false on error
+ */
+static bool extract_udp_info(struct sk_buff *skb, struct iphdr *iph,
+			      struct packet_info *info)
+{
+	struct udphdr *udph;
+
+	if (!pskb_may_pull(skb, iph->ihl * 4 + sizeof(struct udphdr)))
+		return false;
+
+	udph = udp_hdr(skb);
+	if (!udph)
+		return false;
+
+	info->protocol = IPPROTO_UDP;
+	info->saddr = iph->saddr;
+	info->daddr = iph->daddr;
+	info->sport = udph->source;
+	info->dport = udph->dest;
+
+	return true;
+}
+
+/**
+ * extract_icmp_info - Extract ICMP packet information
+ * @skb: Socket buffer
+ * @iph: IP header
+ * @info: Output packet information structure
+ *
+ * Return: true on success, false on error
+ */
+static bool extract_icmp_info(struct sk_buff *skb, struct iphdr *iph,
+			       struct packet_info *info)
+{
+	struct icmphdr *icmph;
+
+	if (!pskb_may_pull(skb, iph->ihl * 4 + sizeof(struct icmphdr)))
+		return false;
+
+	icmph = icmp_hdr(skb);
+	if (!icmph)
+		return false;
+
+	info->protocol = IPPROTO_ICMP;
+	info->saddr = iph->saddr;
+	info->daddr = iph->daddr;
+	info->icmp_type = icmph->type;
+	info->icmp_code = icmph->code;
+	info->sport = 0;
+	info->dport = 0;
+
+	return true;
+}
+
+/**
+ * extract_packet_info - Extract protocol-specific packet information
+ * @skb: Socket buffer
+ * @info: Output packet information structure
+ *
+ * Dispatches to protocol-specific extraction functions based on IP protocol.
+ *
+ * Return: true on success, false on error or unsupported protocol
+ */
+static bool extract_packet_info(struct sk_buff *skb, struct packet_info *info)
+{
+	struct iphdr *iph;
+
+	if (!skb)
+		return false;
+
+	iph = ip_hdr(skb);
+	if (!iph)
+		return false;
+
+	switch (iph->protocol) {
+	case IPPROTO_TCP:
+		return extract_tcp_info(skb, iph, info);
+	case IPPROTO_UDP:
+		return extract_udp_info(skb, iph, info);
+	case IPPROTO_ICMP:
+		return extract_icmp_info(skb, iph, info);
+	default:
+		pr_debug("mutex_proxy: unsupported protocol %u\n", iph->protocol);
+		return false;
+	}
+}
+
+/**
+ * mutex_proxy_should_intercept - Check if packet should be proxied
+ * @skb: Socket buffer containing the packet
+ *
+ * Determines if the current packet matches any active proxy configuration.
+ * Currently a placeholder that always returns false.
+ *
+ * Return: true if packet should be proxied, false otherwise
+ */
+static bool mutex_proxy_should_intercept(struct sk_buff *skb)
+{
+	struct packet_info info;
+	struct mutex_proxy_context *ctx;
+
+	/* Extract packet information (supports TCP/UDP/ICMP) */
+	if (!extract_packet_info(skb, &info))
+		return false;
+
+	/* Check all active proxy contexts to see if any want to intercept this packet */
+	rcu_read_lock();
+	list_for_each_entry_rcu(ctx, &proxy_contexts, list) {
+		/* Skip disabled contexts */
+		if (!atomic_read(&ctx->enabled))
+			continue;
+
+		/* TODO: Add sophisticated matching logic
+		 * - Match packet against ctx->config rules (dest port/addr)
+		 * - Check protocol filtering (TCP/UDP/ICMP)
+		 * - Check if packet is from/to process owning this ctx
+		 * For now, any enabled context causes interception
+		 */
+
+		/* Found at least one enabled context */
+		rcu_read_unlock();
+		return true;
+	}
+	rcu_read_unlock();
+
+	return false;
+}
+
+/**
+ * mutex_proxy_pre_routing - Netfilter hook for incoming packets
+ * @priv: Private data (unused)
+ * @skb: Socket buffer containing the packet
+ * @state: Netfilter hook state
+ *
+ * Called for all incoming packets before routing decision.
+ * This is where we intercept incoming connections that need to be proxied.
+ *
+ * Return: NF_ACCEPT to continue processing, NF_DROP to drop packet
+ */
+static unsigned int mutex_proxy_pre_routing(void *priv,
+					     struct sk_buff *skb,
+					     const struct nf_hook_state *state)
+{
+	struct packet_info info;
+
+	/* Validate skb - NULL check */
+	if (unlikely(!skb)) {
+		pr_err_ratelimited("mutex_proxy: PRE_ROUTING - NULL skb\n");
+		return NF_ACCEPT;
+	}
+
+	/* Extract packet information (handles TCP/UDP/ICMP) */
+	if (unlikely(!extract_packet_info(skb, &info))) {
+		/* Unsupported protocol or malformed packet - early exit */
+		pr_debug_ratelimited("mutex_proxy: PRE_ROUTING - failed to extract packet info\n");
+		return NF_ACCEPT;
+	}
+
+	/* Check if this packet should be proxied - early exit for non-proxied */
+	if (likely(!mutex_proxy_should_intercept(skb))) {
+		/* Most packets won't be proxied - fast path */
+		return NF_ACCEPT;
+	}
+
+	/* Mark packet for proxy handling */
+	skb->mark = 0x1;  /* Custom mark for proxied packets */
+	if (debug)
+		pr_info("mutex_proxy: PRE_ROUTING - marked packet for proxying\n");
+
+	/* Protocol-specific debug logging */
+	switch (info.protocol) {
+	case IPPROTO_TCP:
+		pr_debug("mutex_proxy: PRE_ROUTING TCP - src=%pI4:%u dst=%pI4:%u\n",
+			 &info.saddr, ntohs(info.sport),
+			 &info.daddr, ntohs(info.dport));
+		break;
+	case IPPROTO_UDP:
+		pr_debug("mutex_proxy: PRE_ROUTING UDP - src=%pI4:%u dst=%pI4:%u\n",
+			 &info.saddr, ntohs(info.sport),
+			 &info.daddr, ntohs(info.dport));
+		break;
+	case IPPROTO_ICMP:
+		pr_debug("mutex_proxy: PRE_ROUTING ICMP - src=%pI4 dst=%pI4 type=%u code=%u\n",
+			 &info.saddr, &info.daddr,
+			 info.icmp_type, info.icmp_code);
+		break;
+	}
+
+	return NF_ACCEPT;
+}
+
+/**
+ * mutex_proxy_post_routing - Netfilter hook for outgoing packets
+ * @priv: Private data (unused)
+ * @skb: Socket buffer containing the packet
+ * @state: Netfilter hook state
+ *
+ * Called for all outgoing packets after routing decision.
+ * This is where we can modify packets before they leave the system.
+ *
+ * Return: NF_ACCEPT to continue processing, NF_DROP to drop packet
+ */
+static unsigned int mutex_proxy_post_routing(void *priv,
+					      struct sk_buff *skb,
+					      const struct nf_hook_state *state)
+{
+	struct packet_info info;
+
+	/* Validate skb - NULL check */
+	if (unlikely(!skb)) {
+		pr_err_ratelimited("mutex_proxy: POST_ROUTING - NULL skb\n");
+		return NF_ACCEPT;
+	}
+
+	/* Extract packet information */
+	if (!extract_packet_info(skb, &info)) {
+		pr_debug_ratelimited("mutex_proxy: POST_ROUTING - failed to extract packet info\n");
+		return NF_ACCEPT;
+	}
+
+	/* Check if packet is marked for proxying */
+	if (skb->mark == 0x1) {
+		if (debug)
+			pr_info("mutex_proxy: POST_ROUTING - processing marked packet\n");
+		/* TODO: Rewrite packet headers
+		 * - Replace source address/port with proxy server
+		 * - Update checksums
+		 */
+	}
+
+	/* Protocol-specific debug logging */
+	switch (info.protocol) {
+	case IPPROTO_TCP:
+		pr_debug("mutex_proxy: POST_ROUTING TCP - src=%pI4:%u dst=%pI4:%u\n",
+			 &info.saddr, ntohs(info.sport),
+			 &info.daddr, ntohs(info.dport));
+		break;
+	case IPPROTO_UDP:
+		pr_debug("mutex_proxy: POST_ROUTING UDP - src=%pI4:%u dst=%pI4:%u\n",
+			 &info.saddr, ntohs(info.sport),
+			 &info.daddr, ntohs(info.dport));
+		break;
+	case IPPROTO_ICMP:
+		pr_debug("mutex_proxy: POST_ROUTING ICMP - src=%pI4 dst=%pI4 type=%u code=%u\n",
+			 &info.saddr, &info.daddr,
+			 info.icmp_type, info.icmp_code);
+		break;
+	}
+
+	return NF_ACCEPT;
+}
+
+/**
+ * mutex_proxy_local_out - Netfilter hook for locally generated packets
+ * @priv: Private data (unused)
+ * @skb: Socket buffer containing the packet
+ * @state: Netfilter hook state
+ *
+ * Called for packets originating from this machine.
+ * This is where we intercept locally initiated connections.
+ *
+ * Return: NF_ACCEPT to continue processing, NF_DROP to drop packet
+ */
+static unsigned int mutex_proxy_local_out(void *priv,
+					   struct sk_buff *skb,
+					   const struct nf_hook_state *state)
+{
+	struct packet_info info;
+
+	/* Validate skb - NULL check */
+	if (unlikely(!skb)) {
+		pr_err_ratelimited("mutex_proxy: LOCAL_OUT - NULL skb\n");
+		return NF_ACCEPT;
+	}
+
+	/* Extract packet information */
+	if (!extract_packet_info(skb, &info)) {
+		pr_debug_ratelimited("mutex_proxy: LOCAL_OUT - failed to extract packet info\n");
+		return NF_ACCEPT;
+	}
+
+	/* Check if originating process has active proxy fd */
+	if (mutex_proxy_should_intercept(skb)) {
+		/* Mark for proxying */
+		skb->mark = 0x1;
+		if (debug)
+			pr_info("mutex_proxy: LOCAL_OUT - marked local packet for proxying\n");
+	}
+
+	/* Protocol-specific debug logging */
+	switch (info.protocol) {
+	case IPPROTO_TCP:
+		pr_debug("mutex_proxy: LOCAL_OUT TCP - src=%pI4:%u dst=%pI4:%u\n",
+			 &info.saddr, ntohs(info.sport),
+			 &info.daddr, ntohs(info.dport));
+		break;
+	case IPPROTO_UDP:
+		pr_debug("mutex_proxy: LOCAL_OUT UDP - src=%pI4:%u dst=%pI4:%u\n",
+			 &info.saddr, ntohs(info.sport),
+			 &info.daddr, ntohs(info.dport));
+		break;
+	case IPPROTO_ICMP:
+		pr_debug("mutex_proxy: LOCAL_OUT ICMP - src=%pI4 dst=%pI4 type=%u code=%u\n",
+			 &info.saddr, &info.daddr,
+			 info.icmp_type, info.icmp_code);
+		break;
+	}
+
+	return NF_ACCEPT;
+}
+
 /**
  * mutex_proxy_init - Module initialization
  *
- * Called when the module is loaded. Currently just logs a message.
- * Future: Register netfilter hooks, initialize global state.
+ * Called when the module is loaded. Registers netfilter hooks to intercept
+ * network traffic at key points in the packet processing pipeline.
+ * Hook priorities can be adjusted via module parameters.
  *
  * Return: 0 on success, negative error code on failure
  */
 static int __init mutex_proxy_init(void)
 {
-	pr_info("mutex_proxy: module loaded\n");
+	int ret;
+
+	pr_info("mutex_proxy: initializing module\n");
+
+	/* Validate and set hook priorities from module parameters */
+	if (pre_routing_priority < NF_IP_PRI_FIRST || pre_routing_priority > NF_IP_PRI_LAST) {
+		pr_warn("mutex_proxy: invalid pre_routing_priority %d, using default %d\n",
+			pre_routing_priority, MUTEX_PROXY_PRI_FIRST);
+		pre_routing_priority = MUTEX_PROXY_PRI_FIRST;
+	}
+
+	if (post_routing_priority < NF_IP_PRI_FIRST || post_routing_priority > NF_IP_PRI_LAST) {
+		pr_warn("mutex_proxy: invalid post_routing_priority %d, using default %d\n",
+			post_routing_priority, MUTEX_PROXY_PRI_LAST);
+		post_routing_priority = MUTEX_PROXY_PRI_LAST;
+	}
+
+	if (local_out_priority < NF_IP_PRI_FIRST || local_out_priority > NF_IP_PRI_LAST) {
+		pr_warn("mutex_proxy: invalid local_out_priority %d, using default %d\n",
+			local_out_priority, MUTEX_PROXY_PRI_FIRST);
+		local_out_priority = MUTEX_PROXY_PRI_FIRST;
+	}
+
+	/* Set priorities in hook operations */
+	nf_hooks[0].priority = pre_routing_priority;
+	nf_hooks[1].priority = post_routing_priority;
+	nf_hooks[2].priority = local_out_priority;
+
+	pr_info("mutex_proxy: hook priorities - PRE_ROUTING:%d POST_ROUTING:%d LOCAL_OUT:%d\n",
+		pre_routing_priority, post_routing_priority, local_out_priority);
+
+	/* Register netfilter hooks */
+	ret = nf_register_net_hooks(&init_net, nf_hooks, ARRAY_SIZE(nf_hooks));
+	if (ret) {
+		pr_err("mutex_proxy: failed to register netfilter hooks: %d\n", ret);
+		return ret;
+	}
+
+	pr_info("mutex_proxy: registered %zu netfilter hooks\n", ARRAY_SIZE(nf_hooks));
+	pr_info("mutex_proxy: module loaded successfully\n");
+
 	return 0;
 }
 
 /**
  * mutex_proxy_exit - Module cleanup
  *
- * Called when the module is unloaded. Cleans up all resources.
- * All active file descriptors should be closed before unloading.
+ * Called when the module is unloaded. Unregisters netfilter hooks and
+ * cleans up all resources. All active file descriptors should be closed
+ * before unloading.
  */
 static void __exit mutex_proxy_exit(void)
 {
-	pr_info("mutex_proxy: module unloaded\n");
+	pr_info("mutex_proxy: unloading module\n");
+
+	/* Unregister netfilter hooks */
+	nf_unregister_net_hooks(&init_net, nf_hooks, ARRAY_SIZE(nf_hooks));
+	pr_info("mutex_proxy: unregistered netfilter hooks\n");
+
+	pr_info("mutex_proxy: module unloaded successfully\n");
 }
 
 module_init(mutex_proxy_init);

@@ -57,3 +57,7 @@ dkms.conf
 .local/
 .venv/
 .vscode/
+
+# Build directory
+src/module/build/
+src/linux

@@ -37,6 +37,17 @@ MUTEX is a loadable kernel module (LKM) that creates a kernel-level proxy servic
 - Example programs demonstrating API usage
 - Comprehensive API documentation
 - Complete build system with install/uninstall support
+- 
+✅ **Branch 4 Complete:** `feature/netfilter-hooks`
+- Netfilter hook integration at PRE_ROUTING, POST_ROUTING, LOCAL_OUT
+- Multi-protocol packet filtering (TCP, UDP, ICMP)
+- Runtime configurable hook priorities
+- Global context list with RCU protection
+- Per-context enable/disable via ioctl
+- Comprehensive error handling with rate limiting
+- Performance optimizations (likely/unlikely hints)
+- Debugging infrastructure with module parameters
+- Complete documentation and test suite
 
 ✅ **Branch 5 Complete:** `feature/proxy-configuration`
 - Multiple proxy servers per file descriptor (up to 8)
@@ -47,7 +58,6 @@ MUTEX is a loadable kernel module (LKM) that creates a kernel-level proxy servic
 - Priority-based failover mechanism
 - IPv4/IPv6 address support
 
-🚧 **In Progress:** Branch 4 - `feature/netfilter-hooks`
 
 ## Quick Start
 
@@ -104,7 +114,9 @@ MUTEX/
 │   ├── BRANCH_1_SUMMARY.md # Branch 1 completion summary
 │   ├── BRANCH_2_SUMMARY.md # Branch 2 completion summary
 │   ├── BRANCH_3_SUMMARY.md # Branch 3 completion summary
+│   ├── BRANCH_4_SUMMARY.md # Branch 4 completion summary
 │   ├── BRANCH_5_SUMMARY.md # Branch 5 completion summary
+│   ├── NETFILTER_HOOKS.md # Netfilter integration documentation
 │   ├── PDM-sequence.md    # Project scheduling
 │   ├── COMMIT_CONVENTIONS.md
 │   └── TESTING.md
@@ -151,6 +163,18 @@ MUTEX/
 - ✅ Kernel logging infrastructure
 - ✅ Build system with Makefile
 - ✅ Automated testing framework
+- ✅ **Custom system call registration**
+- ✅ **Syscall table hooking using kprobes**
+- ✅ **CAP_NET_ADMIN capability checking**
+- ✅ **Architecture-specific support (x86_64, i386, ARM64)**
+- ✅ **Userspace test program**
+- ✅ **Input validation and secure parameter passing**
+- ✅ **Netfilter hooks (PRE_ROUTING, POST_ROUTING, LOCAL_OUT)**
+- ✅ **Multi-protocol packet filtering (TCP/UDP/ICMP)**
+- ✅ **Runtime configurable hook priorities**
+- ✅ **Global context management with RCU**
+- ✅ **Per-context packet interception control**
+- ✅ **Debugging and performance optimization infrastructure**
 - ✅ **Custom system call registration (mprox_create)**
 - ✅ **File descriptor-based proxy interface**
 - ✅ **Anonymous inode implementation for proxy fds**
@@ -169,8 +193,8 @@ MUTEX/
 - 🚧 Netfilter hooks for packet interception
 
 ### Planned (See [BRANCH_PLAN.md](docs/BRANCH_PLAN.md))
-- Connection tracking and management
-- Packet rewriting for proxy routing
+- Connection tracking integration
+- Packet rewriting and NAT
 - SOCKS and HTTP proxy protocol support
 - Transparent proxying
 - Performance optimization
@@ -211,6 +235,7 @@ See [docs/COMMIT_CONVENTIONS.md](docs/COMMIT_CONVENTIONS.md) for details.
 
 - **[Branch Plan](docs/BRANCH_PLAN.md):** Complete development roadmap with 25 feature branches
 - **[PDM Sequence](docs/PDM-sequence.md):** Project scheduling and critical path analysis
+- **[Netfilter Hooks](docs/NETFILTER_HOOKS.md):** Netfilter integration architecture and usage
 - **[Contributing Guide](CONTRIBUTING.md):** How to contribute to the project
 - **[Source Documentation](src/README.md):** Technical documentation for the codebase
 - **[Userspace Library API](src/userspace/lib/API.md):** Complete libmutex API reference
@@ -260,4 +285,4 @@ For questions or issues, please open an issue on the project repository or conta
 
 **Last Updated:** December 17, 2025  
 **Version:** 0.4.0  
-**Status:** In Development - Foundation Complete (Branches 1, 2, 3, 5)
+**Status:** In Development
