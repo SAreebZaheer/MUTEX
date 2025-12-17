@@ -63,6 +63,7 @@ struct mutex_proxy_context {
 
 	struct rcu_head rcu;		/* For RCU-safe destruction */
 	atomic_t refcount;		/* Reference counting */
+	struct list_head list;		/* Global list linkage */
 };
 
 /* Context management functions */

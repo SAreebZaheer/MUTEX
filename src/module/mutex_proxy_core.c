@@ -33,6 +33,10 @@
 /* Forward declaration of file_operations - will be implemented incrementally */
 static const struct file_operations mutex_proxy_fops;
 
+/* Global list of all active proxy contexts */
+static LIST_HEAD(proxy_contexts);
+static DEFINE_SPINLOCK(proxy_contexts_lock);
+
 /* Module parameters for runtime hook priority adjustment */
 static int pre_routing_priority = MUTEX_PROXY_PRI_FIRST;
 module_param(pre_routing_priority, int, 0644);
@@ -117,6 +121,14 @@ struct mutex_proxy_context *mutex_proxy_ctx_alloc(unsigned int flags)
 	init_waitqueue_head(&ctx->wait);
 	ctx->event_count = 0;
 
+	/* Initialize list linkage */
+	INIT_LIST_HEAD(&ctx->list);
+
+	/* Add to global list of active contexts */
+	spin_lock(&proxy_contexts_lock);
+	list_add_rcu(&ctx->list, &proxy_contexts);
+	spin_unlock(&proxy_contexts_lock);
+
 	pr_debug("mutex_proxy: allocated context for PID %d (UID %u, GID %u)\n",
 		 ctx->owner_pid, from_kuid(&init_user_ns, ctx->owner_uid),
 		 from_kgid(&init_user_ns, ctx->owner_gid));
@@ -173,6 +185,12 @@ void mutex_proxy_ctx_put(struct mutex_proxy_context *ctx)
 	if (atomic_dec_and_test(&ctx->refcount)) {
 		pr_debug("mutex_proxy: scheduling context destruction for PID %d\n",
 			 ctx->owner_pid);
+
+		/* Remove from global list before RCU destruction */
+		spin_lock(&proxy_contexts_lock);
+		list_del_rcu(&ctx->list);
+		spin_unlock(&proxy_contexts_lock);
+
 		call_rcu(&ctx->rcu, mutex_proxy_ctx_destroy_rcu);
 	}
 }
@@ -699,21 +717,31 @@ static bool extract_packet_info(struct sk_buff *skb, struct packet_info *info)
 static bool mutex_proxy_should_intercept(struct sk_buff *skb)
 {
 	struct packet_info info;
+	struct mutex_proxy_context *ctx;
 
 	/* Extract packet information (supports TCP/UDP/ICMP) */
 	if (!extract_packet_info(skb, &info))
 		return false;
 
-	/* TODO: Implement full context lookup (Commit 13)
-	 * For now, this always returns false until global context list
-	 * is implemented in commit 13. Once implemented, this function will:
-	 * - Iterate through all active proxy contexts
-	 * - Check if any context is enabled (atomic_read on enabled flag)
-	 * - Match packet against configured proxy rules in each context
-	 * - Check if packet is from/to a process with active proxy fd
-	 * - Support per-protocol filtering configuration
-	 * - Return true if ANY enabled context wants to proxy this packet
-	 */
+	/* Check all active proxy contexts to see if any want to intercept this packet */
+	rcu_read_lock();
+	list_for_each_entry_rcu(ctx, &proxy_contexts, list) {
+		/* Skip disabled contexts */
+		if (!atomic_read(&ctx->enabled))
+			continue;
+
+		/* TODO: Add sophisticated matching logic
+		 * - Match packet against ctx->config rules (dest port/addr)
+		 * - Check protocol filtering (TCP/UDP/ICMP)
+		 * - Check if packet is from/to process owning this ctx
+		 * For now, any enabled context causes interception
+		 */
+
+		/* Found at least one enabled context */
+		rcu_read_unlock();
+		return true;
+	}
+	rcu_read_unlock();
 
 	return false;
 }
