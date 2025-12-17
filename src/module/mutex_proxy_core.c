@@ -631,6 +631,58 @@ static unsigned int mutex_proxy_post_routing(void *priv,
 }
 
 /**
+ * mutex_proxy_local_out - Netfilter hook for locally generated packets
+ * @priv: Private data (unused)
+ * @skb: Socket buffer containing the packet
+ * @state: Netfilter hook state
+ *
+ * Called for packets originating from this machine.
+ * This is where we intercept locally initiated connections.
+ *
+ * Return: NF_ACCEPT to continue processing, NF_DROP to drop packet
+ */
+static unsigned int mutex_proxy_local_out(void *priv,
+					   struct sk_buff *skb,
+					   const struct nf_hook_state *state)
+{
+	struct iphdr *iph;
+	struct tcphdr *tcph;
+
+	/* Validate skb */
+	if (!skb)
+		return NF_ACCEPT;
+
+	/* Get IP header */
+	iph = ip_hdr(skb);
+	if (!iph)
+		return NF_ACCEPT;
+
+	/* For now, only handle TCP traffic */
+	if (iph->protocol != IPPROTO_TCP)
+		return NF_ACCEPT;
+
+	/* Ensure we have enough data for TCP header */
+	if (!pskb_may_pull(skb, iph->ihl * 4 + sizeof(struct tcphdr)))
+		return NF_ACCEPT;
+
+	tcph = tcp_hdr(skb);
+	if (!tcph)
+		return NF_ACCEPT;
+
+	/* TODO: Check if this connection should be redirected to proxy
+	 * - Check if destination matches configured proxy ports
+	 * - Redirect to local proxy socket
+	 * - Handle loopback optimization
+	 */
+
+	pr_debug("mutex_proxy: LOCAL_OUT - src=%pI4:%u dst=%pI4:%u\n",
+		 &iph->saddr, ntohs(tcph->source),
+		 &iph->daddr, ntohs(tcph->dest));
+
+	return NF_ACCEPT;
+}
+
+/**
  * mutex_proxy_init - Module initialization
  *
  * Called when the module is loaded. Currently just logs a message.
