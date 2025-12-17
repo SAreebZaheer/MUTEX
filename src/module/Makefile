@@ -15,7 +15,7 @@ KDIR := /lib/modules/$(shell uname -r)/build
 PWD := $(shell pwd)
 
 # Use system's default gcc
-export CC := gcc
+export CC := x86_64-linux-gnu-gcc-12
 
 # Compiler flags
 ccflags-y := -Wall -Wextra
