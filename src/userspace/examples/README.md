@@ -94,6 +94,8 @@ To test with a real proxy, install and run a SOCKS5 server:
 ```bash
 # Using dante (sockd)
 sudo apt-get install dante-server
+# fedora/cent-OS/etc.
+sudo dnf install dante-server
 
 # Or using shadowsocks
 pip install shadowsocks
