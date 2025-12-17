@@ -203,12 +203,6 @@ See [docs/COMMIT_CONVENTIONS.md](docs/COMMIT_CONVENTIONS.md) for details.
 - **[Userspace Library API](src/userspace/lib/API.md):** Complete libmutex API reference
 - **[Userspace Guide](src/userspace/README.md):** Building and using userspace components
 
-## Testing
-
-The module has been tested on:
-- Kernel version: 6.12.57+deb13-amd64
-- Distribution: Debian-based systems
-
 ### Running Tests
 
 ```bash
