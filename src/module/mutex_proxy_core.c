@@ -33,6 +33,19 @@
 /* Forward declaration of file_operations - will be implemented incrementally */
 static const struct file_operations mutex_proxy_fops;
 
+/* Module parameters for runtime hook priority adjustment */
+static int pre_routing_priority = MUTEX_PROXY_PRI_FIRST;
+module_param(pre_routing_priority, int, 0644);
+MODULE_PARM_DESC(pre_routing_priority, "Priority for PRE_ROUTING hook");
+
+static int post_routing_priority = MUTEX_PROXY_PRI_LAST;
+module_param(post_routing_priority, int, 0644);
+MODULE_PARM_DESC(post_routing_priority, "Priority for POST_ROUTING hook");
+
+static int local_out_priority = MUTEX_PROXY_PRI_FIRST;
+module_param(local_out_priority, int, 0644);
+MODULE_PARM_DESC(local_out_priority, "Priority for LOCAL_OUT hook");
+
 /* Netfilter hook function declarations */
 static unsigned int mutex_proxy_pre_routing(void *priv,
 					     struct sk_buff *skb,
@@ -505,25 +518,28 @@ static const struct file_operations mutex_proxy_fops = {
 	.llseek			= noop_llseek,
 };
 
-/* Netfilter hook operations */
+/* Netfilter hook operations - priorities set at module init */
 static struct nf_hook_ops nf_hooks[] = {
 	{
 		.hook		= mutex_proxy_pre_routing,
 		.pf		= NFPROTO_IPV4,
 		.hooknum	= NF_INET_PRE_ROUTING,
-		.priority	= NF_IP_PRI_FIRST,
+		/* Priority set in mutex_proxy_init() */
+		/* PRE_ROUTING: First to see packets before NAT/routing decision */
 	},
 	{
 		.hook		= mutex_proxy_post_routing,
 		.pf		= NFPROTO_IPV4,
 		.hooknum	= NF_INET_POST_ROUTING,
-		.priority	= NF_IP_PRI_LAST,
+		/* Priority set in mutex_proxy_init() */
+		/* POST_ROUTING: Last to modify packets before they leave system */
 	},
 	{
 		.hook		= mutex_proxy_local_out,
 		.pf		= NFPROTO_IPV4,
 		.hooknum	= NF_INET_LOCAL_OUT,
-		.priority	= NF_IP_PRI_FIRST,
+		/* Priority set in mutex_proxy_init() */
+		/* LOCAL_OUT: First to intercept locally generated connections */
 	},
 };
 
@@ -867,6 +883,7 @@ static unsigned int mutex_proxy_local_out(void *priv,
  *
  * Called when the module is loaded. Registers netfilter hooks to intercept
  * network traffic at key points in the packet processing pipeline.
+ * Hook priorities can be adjusted via module parameters.
  *
  * Return: 0 on success, negative error code on failure
  */
@@ -875,6 +892,33 @@ static int __init mutex_proxy_init(void)
 	int ret;
 
 	pr_info("mutex_proxy: initializing module\n");
+
+	/* Validate and set hook priorities from module parameters */
+	if (pre_routing_priority < NF_IP_PRI_FIRST || pre_routing_priority > NF_IP_PRI_LAST) {
+		pr_warn("mutex_proxy: invalid pre_routing_priority %d, using default %d\n",
+			pre_routing_priority, MUTEX_PROXY_PRI_FIRST);
+		pre_routing_priority = MUTEX_PROXY_PRI_FIRST;
+	}
+
+	if (post_routing_priority < NF_IP_PRI_FIRST || post_routing_priority > NF_IP_PRI_LAST) {
+		pr_warn("mutex_proxy: invalid post_routing_priority %d, using default %d\n",
+			post_routing_priority, MUTEX_PROXY_PRI_LAST);
+		post_routing_priority = MUTEX_PROXY_PRI_LAST;
+	}
+
+	if (local_out_priority < NF_IP_PRI_FIRST || local_out_priority > NF_IP_PRI_LAST) {
+		pr_warn("mutex_proxy: invalid local_out_priority %d, using default %d\n",
+			local_out_priority, MUTEX_PROXY_PRI_FIRST);
+		local_out_priority = MUTEX_PROXY_PRI_FIRST;
+	}
+
+	/* Set priorities in hook operations */
+	nf_hooks[0].priority = pre_routing_priority;
+	nf_hooks[1].priority = post_routing_priority;
+	nf_hooks[2].priority = local_out_priority;
+
+	pr_info("mutex_proxy: hook priorities - PRE_ROUTING:%d POST_ROUTING:%d LOCAL_OUT:%d\n",
+		pre_routing_priority, post_routing_priority, local_out_priority);
 
 	/* Register netfilter hooks */
 	ret = nf_register_net_hooks(&init_net, nf_hooks, ARRAY_SIZE(nf_hooks));
