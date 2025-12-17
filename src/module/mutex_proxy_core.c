@@ -25,6 +25,7 @@
 #include <linux/ip.h>
 #include <linux/tcp.h>
 #include <linux/udp.h>
+#include <linux/icmp.h>
 #include <linux/skbuff.h>
 #include "mutex_proxy.h"
 #include "mutex_proxy_meta.h"
@@ -527,6 +528,148 @@ static struct nf_hook_ops nf_hooks[] = {
 };
 
 /**
+ * struct packet_info - Protocol-independent packet information
+ * @protocol: IP protocol number (IPPROTO_TCP, IPPROTO_UDP, IPPROTO_ICMP)
+ * @saddr: Source IP address
+ * @daddr: Destination IP address
+ * @sport: Source port (TCP/UDP only)
+ * @dport: Destination port (TCP/UDP only)
+ * @icmp_type: ICMP type (ICMP only)
+ * @icmp_code: ICMP code (ICMP only)
+ */
+struct packet_info {
+	u8 protocol;
+	__be32 saddr;
+	__be32 daddr;
+	__be16 sport;
+	__be16 dport;
+	u8 icmp_type;
+	u8 icmp_code;
+};
+
+/**
+ * extract_tcp_info - Extract TCP packet information
+ * @skb: Socket buffer
+ * @iph: IP header
+ * @info: Output packet information structure
+ *
+ * Return: true on success, false on error
+ */
+static bool extract_tcp_info(struct sk_buff *skb, struct iphdr *iph,
+			      struct packet_info *info)
+{
+	struct tcphdr *tcph;
+
+	if (!pskb_may_pull(skb, iph->ihl * 4 + sizeof(struct tcphdr)))
+		return false;
+
+	tcph = tcp_hdr(skb);
+	if (!tcph)
+		return false;
+
+	info->protocol = IPPROTO_TCP;
+	info->saddr = iph->saddr;
+	info->daddr = iph->daddr;
+	info->sport = tcph->source;
+	info->dport = tcph->dest;
+
+	return true;
+}
+
+/**
+ * extract_udp_info - Extract UDP packet information
+ * @skb: Socket buffer
+ * @iph: IP header
+ * @info: Output packet information structure
+ *
+ * Return: true on success, false on error
+ */
+static bool extract_udp_info(struct sk_buff *skb, struct iphdr *iph,
+			      struct packet_info *info)
+{
+	struct udphdr *udph;
+
+	if (!pskb_may_pull(skb, iph->ihl * 4 + sizeof(struct udphdr)))
+		return false;
+
+	udph = udp_hdr(skb);
+	if (!udph)
+		return false;
+
+	info->protocol = IPPROTO_UDP;
+	info->saddr = iph->saddr;
+	info->daddr = iph->daddr;
+	info->sport = udph->source;
+	info->dport = udph->dest;
+
+	return true;
+}
+
+/**
+ * extract_icmp_info - Extract ICMP packet information
+ * @skb: Socket buffer
+ * @iph: IP header
+ * @info: Output packet information structure
+ *
+ * Return: true on success, false on error
+ */
+static bool extract_icmp_info(struct sk_buff *skb, struct iphdr *iph,
+			       struct packet_info *info)
+{
+	struct icmphdr *icmph;
+
+	if (!pskb_may_pull(skb, iph->ihl * 4 + sizeof(struct icmphdr)))
+		return false;
+
+	icmph = icmp_hdr(skb);
+	if (!icmph)
+		return false;
+
+	info->protocol = IPPROTO_ICMP;
+	info->saddr = iph->saddr;
+	info->daddr = iph->daddr;
+	info->icmp_type = icmph->type;
+	info->icmp_code = icmph->code;
+	info->sport = 0;
+	info->dport = 0;
+
+	return true;
+}
+
+/**
+ * extract_packet_info - Extract protocol-specific packet information
+ * @skb: Socket buffer
+ * @info: Output packet information structure
+ *
+ * Dispatches to protocol-specific extraction functions based on IP protocol.
+ *
+ * Return: true on success, false on error or unsupported protocol
+ */
+static bool extract_packet_info(struct sk_buff *skb, struct packet_info *info)
+{
+	struct iphdr *iph;
+
+	if (!skb)
+		return false;
+
+	iph = ip_hdr(skb);
+	if (!iph)
+		return false;
+
+	switch (iph->protocol) {
+	case IPPROTO_TCP:
+		return extract_tcp_info(skb, iph, info);
+	case IPPROTO_UDP:
+		return extract_udp_info(skb, iph, info);
+	case IPPROTO_ICMP:
+		return extract_icmp_info(skb, iph, info);
+	default:
+		pr_debug("mutex_proxy: unsupported protocol %u\n", iph->protocol);
+		return false;
+	}
+}
+
+/**
  * mutex_proxy_should_intercept - Check if packet should be proxied
  * @skb: Socket buffer containing the packet
  *
@@ -537,11 +680,19 @@ static struct nf_hook_ops nf_hooks[] = {
  */
 static bool mutex_proxy_should_intercept(struct sk_buff *skb)
 {
+	struct packet_info info;
+
+	/* Extract packet information (supports TCP/UDP/ICMP) */
+	if (!extract_packet_info(skb, &info))
+		return false;
+
 	/* TODO: Implement context lookup
 	 * - Check if any proxy contexts are enabled
 	 * - Match packet against configured proxy rules
 	 * - Check if packet is from/to a process with active proxy fd
+	 * - Support per-protocol filtering configuration
 	 */
+
 	return false;
 }
 
@@ -560,29 +711,17 @@ static unsigned int mutex_proxy_pre_routing(void *priv,
 					     struct sk_buff *skb,
 					     const struct nf_hook_state *state)
 {
-	struct iphdr *iph;
-	struct tcphdr *tcph;
+	struct packet_info info;
 
 	/* Validate skb */
 	if (!skb)
 		return NF_ACCEPT;
 
-	/* Get IP header */
-	iph = ip_hdr(skb);
-	if (!iph)
+	/* Extract packet information (handles TCP/UDP/ICMP) */
+	if (!extract_packet_info(skb, &info)) {
+		/* Unsupported protocol or malformed packet */
 		return NF_ACCEPT;
-
-	/* For now, only handle TCP traffic */
-	if (iph->protocol != IPPROTO_TCP)
-		return NF_ACCEPT;
-
-	/* Ensure we have enough data for TCP header */
-	if (!pskb_may_pull(skb, iph->ihl * 4 + sizeof(struct tcphdr)))
-		return NF_ACCEPT;
-
-	tcph = tcp_hdr(skb);
-	if (!tcph)
-		return NF_ACCEPT;
+	}
 
 	/* Check if this packet should be proxied */
 	if (mutex_proxy_should_intercept(skb)) {
@@ -591,9 +730,24 @@ static unsigned int mutex_proxy_pre_routing(void *priv,
 		pr_debug("mutex_proxy: PRE_ROUTING - marked packet for proxying\n");
 	}
 
-	pr_debug("mutex_proxy: PRE_ROUTING - src=%pI4:%u dst=%pI4:%u\n",
-		 &iph->saddr, ntohs(tcph->source),
-		 &iph->daddr, ntohs(tcph->dest));
+	/* Protocol-specific debug logging */
+	switch (info.protocol) {
+	case IPPROTO_TCP:
+		pr_debug("mutex_proxy: PRE_ROUTING TCP - src=%pI4:%u dst=%pI4:%u\n",
+			 &info.saddr, ntohs(info.sport),
+			 &info.daddr, ntohs(info.dport));
+		break;
+	case IPPROTO_UDP:
+		pr_debug("mutex_proxy: PRE_ROUTING UDP - src=%pI4:%u dst=%pI4:%u\n",
+			 &info.saddr, ntohs(info.sport),
+			 &info.daddr, ntohs(info.dport));
+		break;
+	case IPPROTO_ICMP:
+		pr_debug("mutex_proxy: PRE_ROUTING ICMP - src=%pI4 dst=%pI4 type=%u code=%u\n",
+			 &info.saddr, &info.daddr,
+			 info.icmp_type, info.icmp_code);
+		break;
+	}
 
 	return NF_ACCEPT;
 }
@@ -613,28 +767,14 @@ static unsigned int mutex_proxy_post_routing(void *priv,
 					      struct sk_buff *skb,
 					      const struct nf_hook_state *state)
 {
-	struct iphdr *iph;
-	struct tcphdr *tcph;
+	struct packet_info info;
 
 	/* Validate skb */
 	if (!skb)
 		return NF_ACCEPT;
 
-	/* Get IP header */
-	iph = ip_hdr(skb);
-	if (!iph)
-		return NF_ACCEPT;
-
-	/* For now, only handle TCP traffic */
-	if (iph->protocol != IPPROTO_TCP)
-		return NF_ACCEPT;
-
-	/* Ensure we have enough data for TCP header */
-	if (!pskb_may_pull(skb, iph->ihl * 4 + sizeof(struct tcphdr)))
-		return NF_ACCEPT;
-
-	tcph = tcp_hdr(skb);
-	if (!tcph)
+	/* Extract packet information */
+	if (!extract_packet_info(skb, &info))
 		return NF_ACCEPT;
 
 	/* Check if packet is marked for proxying */
@@ -646,9 +786,24 @@ static unsigned int mutex_proxy_post_routing(void *priv,
 		 */
 	}
 
-	pr_debug("mutex_proxy: POST_ROUTING - src=%pI4:%u dst=%pI4:%u\n",
-		 &iph->saddr, ntohs(tcph->source),
-		 &iph->daddr, ntohs(tcph->dest));
+	/* Protocol-specific debug logging */
+	switch (info.protocol) {
+	case IPPROTO_TCP:
+		pr_debug("mutex_proxy: POST_ROUTING TCP - src=%pI4:%u dst=%pI4:%u\n",
+			 &info.saddr, ntohs(info.sport),
+			 &info.daddr, ntohs(info.dport));
+		break;
+	case IPPROTO_UDP:
+		pr_debug("mutex_proxy: POST_ROUTING UDP - src=%pI4:%u dst=%pI4:%u\n",
+			 &info.saddr, ntohs(info.sport),
+			 &info.daddr, ntohs(info.dport));
+		break;
+	case IPPROTO_ICMP:
+		pr_debug("mutex_proxy: POST_ROUTING ICMP - src=%pI4 dst=%pI4 type=%u code=%u\n",
+			 &info.saddr, &info.daddr,
+			 info.icmp_type, info.icmp_code);
+		break;
+	}
 
 	return NF_ACCEPT;
 }
@@ -668,28 +823,14 @@ static unsigned int mutex_proxy_local_out(void *priv,
 					   struct sk_buff *skb,
 					   const struct nf_hook_state *state)
 {
-	struct iphdr *iph;
-	struct tcphdr *tcph;
+	struct packet_info info;
 
 	/* Validate skb */
 	if (!skb)
 		return NF_ACCEPT;
 
-	/* Get IP header */
-	iph = ip_hdr(skb);
-	if (!iph)
-		return NF_ACCEPT;
-
-	/* For now, only handle TCP traffic */
-	if (iph->protocol != IPPROTO_TCP)
-		return NF_ACCEPT;
-
-	/* Ensure we have enough data for TCP header */
-	if (!pskb_may_pull(skb, iph->ihl * 4 + sizeof(struct tcphdr)))
-		return NF_ACCEPT;
-
-	tcph = tcp_hdr(skb);
-	if (!tcph)
+	/* Extract packet information */
+	if (!extract_packet_info(skb, &info))
 		return NF_ACCEPT;
 
 	/* Check if originating process has active proxy fd */
@@ -699,9 +840,24 @@ static unsigned int mutex_proxy_local_out(void *priv,
 		pr_debug("mutex_proxy: LOCAL_OUT - marked local packet for proxying\n");
 	}
 
-	pr_debug("mutex_proxy: LOCAL_OUT - src=%pI4:%u dst=%pI4:%u\n",
-		 &iph->saddr, ntohs(tcph->source),
-		 &iph->daddr, ntohs(tcph->dest));
+	/* Protocol-specific debug logging */
+	switch (info.protocol) {
+	case IPPROTO_TCP:
+		pr_debug("mutex_proxy: LOCAL_OUT TCP - src=%pI4:%u dst=%pI4:%u\n",
+			 &info.saddr, ntohs(info.sport),
+			 &info.daddr, ntohs(info.dport));
+		break;
+	case IPPROTO_UDP:
+		pr_debug("mutex_proxy: LOCAL_OUT UDP - src=%pI4:%u dst=%pI4:%u\n",
+			 &info.saddr, ntohs(info.sport),
+			 &info.daddr, ntohs(info.dport));
+		break;
+	case IPPROTO_ICMP:
+		pr_debug("mutex_proxy: LOCAL_OUT ICMP - src=%pI4 dst=%pI4 type=%u code=%u\n",
+			 &info.saddr, &info.daddr,
+			 info.icmp_type, info.icmp_code);
+		break;
+	}
 
 	return NF_ACCEPT;
 }
