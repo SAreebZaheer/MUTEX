@@ -14,8 +14,9 @@ KDIR := /lib/modules/$(shell uname -r)/build
 # Current directory
 PWD := $(shell pwd)
 
-# Use system's default gcc
-export CC := gcc
+# Compiler - defaults to gcc, can be overridden (e.g., make CC=gcc-12)
+CC ?= gcc
+export CC
 
 # Compiler flags
 ccflags-y := -Wall -Wextra
@@ -83,5 +84,13 @@ help:
 	@echo "  make status   - Check if module is loaded"
 	@echo "  make log      - Display recent kernel messages"
 	@echo "  make help     - Display this help message"
+	@echo ""
+	@echo "Options:"
+	@echo "  CC=<compiler> - Specify compiler (default: gcc)"
+	@echo ""
+	@echo "Examples:"
+	@echo "  make                 # Use default gcc"
+	@echo "  make CC=gcc-12       # Use gcc-12"
+	@echo "  make CC=clang        # Use clang"
 
 .PHONY: all clean install load unload reload info status log help
