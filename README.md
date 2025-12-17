@@ -28,6 +28,17 @@ MUTEX is a loadable kernel module (LKM) that creates a kernel-level proxy servic
 - Userspace test program for syscall validation
 - Input validation and secure parameter passing
 
+✅ **Branch 4 Complete:** `feature/netfilter-hooks`
+- Netfilter hook integration at PRE_ROUTING, POST_ROUTING, LOCAL_OUT
+- Multi-protocol packet filtering (TCP, UDP, ICMP)
+- Runtime configurable hook priorities
+- Global context list with RCU protection
+- Per-context enable/disable via ioctl
+- Comprehensive error handling with rate limiting
+- Performance optimizations (likely/unlikely hints)
+- Debugging infrastructure with module parameters
+- Complete documentation and test suite
+
 🚧 **In Progress:** Branch 3 - `feature/userspace-interface`
 
 ## Quick Start
@@ -74,6 +85,8 @@ MUTEX/
 │   ├── BRANCH_PLAN.md     # Development roadmap
 │   ├── BRANCH_1_SUMMARY.md # Branch 1 completion summary
 │   ├── BRANCH_2_SUMMARY.md # Branch 2 completion summary
+│   ├── BRANCH_4_SUMMARY.md # Branch 4 completion summary
+│   ├── NETFILTER_HOOKS.md # Netfilter integration documentation
 │   ├── PDM-sequence.md    # Project scheduling
 │   └── COMMIT_CONVENTIONS.md
 ├── src/                    # Source code
@@ -89,7 +102,7 @@ MUTEX/
 
 ## Features
 
-### Implemented (v0.2.0)
+### Implemented (v0.4.0)
 - ✅ Basic LKM structure with init/exit functions
 - ✅ Module metadata and licensing
 - ✅ Kernel logging infrastructure
@@ -101,13 +114,20 @@ MUTEX/
 - ✅ **Architecture-specific support (x86_64, i386, ARM64)**
 - ✅ **Userspace test program**
 - ✅ **Input validation and secure parameter passing**
+- ✅ **Netfilter hooks (PRE_ROUTING, POST_ROUTING, LOCAL_OUT)**
+- ✅ **Multi-protocol packet filtering (TCP/UDP/ICMP)**
+- ✅ **Runtime configurable hook priorities**
+- ✅ **Global context management with RCU**
+- ✅ **Per-context packet interception control**
+- ✅ **Debugging and performance optimization infrastructure**
 
 ### In Development
 - 🚧 Userspace interface library
 - 🚧 ioctl interface implementation
 
 ### Planned (See [BRANCH_PLAN.md](docs/BRANCH_PLAN.md))
-- Netfilter hooks for packet interception
+- Connection tracking integration
+- Packet rewriting and NAT
 - SOCKS and HTTP proxy protocol support
 - Transparent proxying
 - Connection tracking and management
@@ -149,6 +169,7 @@ See [docs/COMMIT_CONVENTIONS.md](docs/COMMIT_CONVENTIONS.md) for details.
 
 - **[Branch Plan](docs/BRANCH_PLAN.md):** Complete development roadmap with 25 feature branches
 - **[PDM Sequence](docs/PDM-sequence.md):** Project scheduling and critical path analysis
+- **[Netfilter Hooks](docs/NETFILTER_HOOKS.md):** Netfilter integration architecture and usage
 - **[Contributing Guide](CONTRIBUTING.md):** How to contribute to the project
 - **[Source Documentation](src/README.md):** Technical documentation for the codebase
 
@@ -196,6 +217,6 @@ For questions or issues, please open an issue on the project repository or conta
 
 ---
 
-**Last Updated:** December 14, 2025  
-**Version:** 0.1.0  
+**Last Updated:** December 17, 2025  
+**Version:** 0.4.0  
 **Status:** In Development
