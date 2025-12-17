@@ -685,14 +685,27 @@ static unsigned int mutex_proxy_local_out(void *priv,
 /**
  * mutex_proxy_init - Module initialization
  *
- * Called when the module is loaded. Currently just logs a message.
- * Future: Register netfilter hooks, initialize global state.
+ * Called when the module is loaded. Registers netfilter hooks to intercept
+ * network traffic at key points in the packet processing pipeline.
  *
  * Return: 0 on success, negative error code on failure
  */
 static int __init mutex_proxy_init(void)
 {
-	pr_info("mutex_proxy: module loaded\n");
+	int ret;
+
+	pr_info("mutex_proxy: initializing module\n");
+
+	/* Register netfilter hooks */
+	ret = nf_register_net_hooks(&init_net, nf_hooks, ARRAY_SIZE(nf_hooks));
+	if (ret) {
+		pr_err("mutex_proxy: failed to register netfilter hooks: %d\n", ret);
+		return ret;
+	}
+
+	pr_info("mutex_proxy: registered %zu netfilter hooks\n", ARRAY_SIZE(nf_hooks));
+	pr_info("mutex_proxy: module loaded successfully\n");
+
 	return 0;
 }
 
