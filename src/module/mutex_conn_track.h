@@ -184,12 +184,15 @@ struct mutex_conn_entry {
 	struct timer_list timer;	/* Timeout timer */
 
 	void *ctx;			/* Owning proxy context (opaque) */
+	void *transparent_ctx;		/* Transparent proxy context */
 
 	/* TCP-specific fields */
 	__s32 seq_delta;		/* Sequence number adjustment */
 	__s32 ack_delta;		/* Acknowledgment adjustment */
 
 	__u32 flags;			/* Connection flags */
+	__be32 proxy_addr;		/* Proxy server address */
+	__be16 proxy_port;		/* Proxy server port */
 };
 
 /* Connection tracking table structure */
@@ -306,6 +309,26 @@ void mutex_conn_update_stats(struct mutex_conn_entry *conn,
  * Called when a proxy fd is closed.
  */
 void mutex_conn_cleanup_context(void *ctx);
+
+/**
+ * mutex_conn_lookup_by_skb() - Find connection by packet
+ * @skb: Packet to extract tuple from
+ *
+ * Extracts 5-tuple from packet and looks up connection.
+ *
+ * Return: Pointer to entry on success, NULL if not found
+ */
+struct mutex_conn_entry *mutex_conn_lookup_by_skb(struct sk_buff *skb);
+
+/**
+ * mutex_conn_alloc_from_skb() - Create connection from packet
+ * @skb: Packet to extract tuple from
+ *
+ * Creates a new connection entry from packet 5-tuple.
+ *
+ * Return: Pointer to new entry on success, NULL on failure
+ */
+struct mutex_conn_entry *mutex_conn_alloc_from_skb(struct sk_buff *skb);
 
 /**
  * mutex_conn_hash() - Calculate hash for connection tuple

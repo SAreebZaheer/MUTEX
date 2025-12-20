@@ -22,7 +22,7 @@
 
 /* ========== Forward Declarations ========== */
 
-struct mutex_connection;
+struct mutex_conn_entry;
 struct socks_connection;
 struct http_proxy_connection;
 
@@ -182,7 +182,7 @@ struct nat_entry {
 	unsigned long last_seen;        /* Last activity */
 
 	/* Reference to connection tracking */
-	struct mutex_connection *conn;
+	struct mutex_conn_entry *conn;
 
 	/* List linkage */
 	struct hlist_node hnode;
@@ -266,17 +266,17 @@ bool transparent_is_private_address(__be32 addr);
 /* Connection Interception */
 int transparent_intercept_outbound(struct transparent_context *ctx,
 				   struct sk_buff *skb,
-				   struct mutex_connection *conn);
+				   struct mutex_conn_entry *conn);
 int transparent_intercept_inbound(struct transparent_context *ctx,
 				  struct sk_buff *skb,
-				  struct mutex_connection *conn);
+				  struct mutex_conn_entry *conn);
 
 /* Proxy Protocol Selection */
 enum proxy_protocol_type transparent_select_protocol(
 	struct transparent_context *ctx,
 	struct sk_buff *skb);
 int transparent_establish_proxy_connection(struct transparent_context *ctx,
-					   struct mutex_connection *conn,
+					   struct mutex_conn_entry *conn,
 					   enum proxy_protocol_type protocol);
 
 /* DNS Handling */
@@ -319,10 +319,10 @@ bool transparent_is_target_process(struct transparent_context *ctx, pid_t pid);
 bool transparent_is_child_process(pid_t parent, pid_t child);
 
 /* Integration Functions */
-int transparent_attach_to_connection(struct mutex_connection *conn,
+int transparent_attach_to_connection(struct mutex_conn_entry *conn,
 				     struct transparent_context *ctx);
 struct transparent_context *transparent_get_from_connection(
-	struct mutex_connection *conn);
+	struct mutex_conn_entry *conn);
 
 /* Netfilter Hook Integration */
 unsigned int transparent_nf_hook_in(void *priv,

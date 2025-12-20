@@ -468,7 +468,7 @@ bool transparent_is_private_address(__be32 addr)
  */
 int transparent_intercept_outbound(struct transparent_context *ctx,
 				   struct sk_buff *skb,
-				   struct mutex_connection *conn)
+				   struct mutex_conn_entry *conn)
 {
 	struct iphdr *iph;
 	enum proxy_protocol_type protocol;
@@ -569,7 +569,7 @@ int transparent_intercept_outbound(struct transparent_context *ctx,
  */
 int transparent_intercept_inbound(struct transparent_context *ctx,
 				  struct sk_buff *skb,
-				  struct mutex_connection *conn)
+				  struct mutex_conn_entry *conn)
 {
 	struct iphdr *iph;
 	struct tcphdr *tcph;
@@ -685,7 +685,7 @@ enum proxy_protocol_type transparent_select_protocol(
 }
 
 int transparent_establish_proxy_connection(struct transparent_context *ctx,
-					   struct mutex_connection *conn,
+					   struct mutex_conn_entry *conn,
 					   enum proxy_protocol_type protocol)
 {
 	int ret = 0;
@@ -1184,7 +1184,7 @@ bool transparent_is_child_process(pid_t parent, pid_t child)
 
 /* ========== Integration Functions ========== */
 
-int transparent_attach_to_connection(struct mutex_connection *conn,
+int transparent_attach_to_connection(struct mutex_conn_entry *conn,
 				     struct transparent_context *ctx)
 {
 	if (!conn || !ctx)
@@ -1196,7 +1196,7 @@ int transparent_attach_to_connection(struct mutex_connection *conn,
 }
 
 struct transparent_context *transparent_get_from_connection(
-	struct mutex_connection *conn)
+	struct mutex_conn_entry *conn)
 {
 	if (!conn)
 		return NULL;
@@ -1211,7 +1211,7 @@ unsigned int transparent_nf_hook_in(void *priv,
 				    const struct nf_hook_state *state)
 {
 	struct transparent_context *ctx = priv;
-	struct mutex_connection *conn;
+	struct mutex_conn_entry *conn;
 	int ret;
 
 	if (!ctx || !skb)
@@ -1235,7 +1235,7 @@ unsigned int transparent_nf_hook_out(void *priv,
 				     const struct nf_hook_state *state)
 {
 	struct transparent_context *ctx = priv;
-	struct mutex_connection *conn;
+	struct mutex_conn_entry *conn;
 	int ret;
 
 	if (!ctx || !skb)

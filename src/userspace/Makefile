@@ -1,8 +1,8 @@
 # MUTEX Userspace Makefile
 
-.PHONY: all lib cli daemon examples clean install uninstall help
+.PHONY: all lib cli daemon examples test_process_filter clean install uninstall help
 
-all: lib cli daemon examples
+all: lib cli daemon examples test_process_filter
 
 # Build library first (required by cli and examples)
 lib:
@@ -24,6 +24,13 @@ examples: lib
 	@echo "Building examples..."
 	$(MAKE) -C examples
 
+# Build process filter test utility
+test_process_filter:
+	@echo "Building process filter test utility..."
+	$(CC) -Wall -Wextra -O2 -o test_process_filter \
+		test_process_filter.c mutex_process_filter_api.c
+	@echo "Test utility built: test_process_filter"
+
 # Clean all
 clean:
 	@echo "Cleaning all userspace components..."
@@ -31,6 +38,7 @@ clean:
 	$(MAKE) -C cli clean
 	$(MAKE) -C daemon clean
 	$(MAKE) -C examples clean
+	@rm -f test_process_filter
 	@echo "All clean!"
 
 # Install library, CLI tool, and daemon
