@@ -1,8 +1,8 @@
 # MUTEX Userspace Makefile
 
-.PHONY: all lib cli daemon examples test_process_filter clean install uninstall help
+.PHONY: all lib cli daemon examples test_process_filter test_protocol_detect clean install uninstall help
 
-all: lib cli daemon examples test_process_filter
+all: lib cli daemon examples test_process_filter test_protocol_detect
 
 # Build library first (required by cli and examples)
 lib:
@@ -31,6 +31,13 @@ test_process_filter:
 		test_process_filter.c mutex_process_filter_api.c
 	@echo "Test utility built: test_process_filter"
 
+# Build protocol detection test utility
+test_protocol_detect:
+	@echo "Building protocol detection test utility..."
+	$(CC) -Wall -Wextra -O2 -o test_protocol_detect \
+		test_protocol_detect.c mutex_protocol_detect_api.c
+	@echo "Test utility built: test_protocol_detect"
+
 # Clean all
 clean:
 	@echo "Cleaning all userspace components..."
@@ -38,7 +45,7 @@ clean:
 	$(MAKE) -C cli clean
 	$(MAKE) -C daemon clean
 	$(MAKE) -C examples clean
-	@rm -f test_process_filter
+	@rm -f test_process_filter test_protocol_detect
 	@echo "All clean!"
 
 # Install library, CLI tool, and daemon

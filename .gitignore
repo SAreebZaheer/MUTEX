@@ -65,3 +65,4 @@ src/linux
 # Test executables
 src/userspace/test_api_compile
 src/userspace/test_process_filter
+src/userspace/test_protocol_detect
