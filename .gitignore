@@ -61,3 +61,7 @@ dkms.conf
 # Build directory
 src/module/build/
 src/linux
+
+# Test executables
+src/userspace/test_api_compile
+src/userspace/test_process_filter
