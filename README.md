@@ -154,6 +154,30 @@ MUTEX is a loadable kernel module (LKM) that creates a kernel-level proxy servic
 - IOCTL-based userspace API
 - 22-test suite with 95.5% pass rate
 
+✅ **Branch 13 Complete:** `feature/performance-optimization`
+- Lock-free data structures using RCU and atomic operations
+- Per-CPU statistics for reduced contention
+- Fast path optimizations with likely/unlikely hints
+- Bulk packet processing for improved throughput
+- Memory pool allocators for reduced allocation overhead
+- Cache-friendly data structure alignment
+- Zero-copy packet handling where possible
+- Optimized hash functions for connection lookup
+- Performance monitoring and profiling infrastructure
+- Benchmarking suite and performance regression tests
+
+✅ **Branch 14 Complete:** `feature/security-hardening`
+- Capability checks (CAP_NET_ADMIN, CAP_NET_RAW)
+- Comprehensive input validation and sanitization
+- Safe buffer operations with overflow protection
+- Rate limiting to prevent DoS attacks (token bucket algorithm)
+- Audit logging for security events (10 event types)
+- Secure memory operations (sensitive data wiping)
+- Packet validation (TCP, UDP, suspicious detection)
+- Connection security contexts
+- Statistics tracking for security monitoring
+- LSM integration helpers for future SELinux/AppArmor support
+
 ✅ **Branch 20 Complete:** `feature/configuration-file`
 - JSON-based configuration file format
 - Userspace daemon for configuration management
@@ -227,6 +251,8 @@ MUTEX/
 │   ├── BRANCH_10_SUMMARY.md # Branch 10 completion summary
 │   ├── BRANCH_11_SUMMARY.md # Branch 11 completion summary
 │   ├── BRANCH_12_SUMMARY.md # Branch 12 completion summary
+│   ├── BRANCH_13_SUMMARY.md # Branch 13 completion summary
+│   ├── BRANCH_14_SUMMARY.md # Branch 14 completion summary
 │   ├── BRANCH_20_SUMMARY.md # Branch 20 completion summary
 │   ├── NETFILTER_HOOKS.md # Netfilter integration documentation
 │   ├── PDM-sequence.md    # Project scheduling
@@ -251,6 +277,10 @@ MUTEX/
 │   │   ├── mutex_protocol_detect.c # Protocol detection
 │   │   ├── mutex_protocol_detect.h # Protocol detection header
 │   │   ├── mutex_protocol_detect_types.h # Protocol types
+│   │   ├── mutex_perf_opt.c        # Performance optimizations
+│   │   ├── mutex_perf_opt.h        # Performance optimizations header
+│   │   ├── mutex_security.c        # Security hardening
+│   │   ├── mutex_security.h        # Security hardening header
 │   │   ├── Makefile                # Build configuration
 │   │   └── test_module.sh          # Automated testing
 │   ├── userspace/         # Userspace components
@@ -427,8 +457,8 @@ GPL (GNU General Public License)
   - Branch 12: Protocol detection ✅
   - Branch 20: Configuration file ✅
 - **Milestone 4:** Production Ready (Week 23) - IN PROGRESS
-  - Branch 13: Performance optimization 🚧
-  - Branch 14: Security hardening 🚧
+  - Branch 13: Performance optimization ✅
+  - Branch 14: Security hardening ✅
   - Branch 17: DNS handling 🚧
 - **Milestone 5:** Release Candidate (Week 28)
 - **Milestone 6:** Version 1.0 (Week 31)
@@ -440,5 +470,5 @@ For questions or issues, please open an issue on the project repository or conta
 ---
 
 **Last Updated:** December 21, 2025
-**Version:** 0.8.0
+**Version:** 0.10.0
 **Status:** In Development - Milestone 4 (Production Ready)
