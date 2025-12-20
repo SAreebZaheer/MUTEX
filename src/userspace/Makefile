@@ -1,8 +1,8 @@
 # MUTEX Userspace Makefile
 
-.PHONY: all lib cli examples clean install uninstall help
+.PHONY: all lib cli daemon examples clean install uninstall help
 
-all: lib cli examples
+all: lib cli daemon examples
 
 # Build library first (required by cli and examples)
 lib:
@@ -14,6 +14,11 @@ cli: lib
 	@echo "Building mprox CLI..."
 	$(MAKE) -C cli
 
+# Build daemon (mutexd)
+daemon:
+	@echo "Building MUTEX daemon..."
+	$(MAKE) -C daemon
+
 # Build example programs
 examples: lib
 	@echo "Building examples..."
@@ -24,15 +29,18 @@ clean:
 	@echo "Cleaning all userspace components..."
 	$(MAKE) -C lib clean
 	$(MAKE) -C cli clean
+	$(MAKE) -C daemon clean
 	$(MAKE) -C examples clean
 	@echo "All clean!"
 
-# Install library and CLI tool
-install: lib cli
+# Install library, CLI tool, and daemon
+install: lib cli daemon
 	@echo "Installing libmutex..."
 	$(MAKE) -C lib install
 	@echo "Installing mprox CLI..."
 	$(MAKE) -C cli install
+	@echo "Installing MUTEX daemon..."
+	$(MAKE) -C daemon install
 	@echo "Installation complete!"
 	@echo ""
 	@echo "To use libmutex in your programs:"
@@ -40,12 +48,16 @@ install: lib cli
 	@echo ""
 	@echo "To manage proxies from command line:"
 	@echo "  mprox help"
+	@echo ""
+	@echo "To start the daemon:"
+	@echo "  sudo mutexctl start"
 
-# Uninstall library and CLI tool
+# Uninstall library, CLI tool, and daemon
 uninstall:
 	@echo "Uninstalling..."
 	$(MAKE) -C lib uninstall
 	$(MAKE) -C cli uninstall
+	$(MAKE) -C daemon uninstall
 	@echo "Uninstallation complete!"
 
 # Help
