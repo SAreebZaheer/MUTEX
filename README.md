@@ -79,7 +79,7 @@ MUTEX is a loadable kernel module (LKM) that creates a kernel-level proxy servic
 - Default configuration templates
 - Configuration backup and restore
 
-🚧 **Branch 7 In Progress:** `feature/packet-rewriting`
+✅ **Branch 7 Complete:** `feature/packet-rewriting`
 - IP header modification (IPv4/IPv6 address rewriting)
 - TCP header modifications (ports, sequence/ack numbers)
 - UDP header modifications (ports)
@@ -89,6 +89,17 @@ MUTEX is a loadable kernel module (LKM) that creates a kernel-level proxy servic
 - MTU checking and fragmentation handling
 - Packet cloning for inspection
 - Comprehensive rewrite statistics
+
+✅ **Branch 8 Complete:** `feature/socks-protocol`
+- SOCKS4 and SOCKS4a protocol support
+- SOCKS5 protocol with full feature set
+- TCP CONNECT, BIND, and UDP ASSOCIATE commands
+- Multiple authentication methods (none, username/password)
+- IPv4, IPv6, and domain name addressing
+- State machine for connection lifecycle management
+- Protocol request/response builders and parsers
+- UDP relay support for SOCKS5
+- Comprehensive error handling and statistics
 
 ## Quick Start
 
@@ -147,6 +158,8 @@ MUTEX/
 │   ├── BRANCH_3_SUMMARY.md # Branch 3 completion summary
 │   ├── BRANCH_4_SUMMARY.md # Branch 4 completion summary
 │   ├── BRANCH_5_SUMMARY.md # Branch 5 completion summary
+│   ├── BRANCH_7_SUMMARY.md # Branch 7 completion summary
+│   ├── BRANCH_8_SUMMARY.md # Branch 8 completion summary
 │   ├── NETFILTER_HOOKS.md # Netfilter integration documentation
 │   ├── PDM-sequence.md    # Project scheduling
 │   ├── COMMIT_CONVENTIONS.md
@@ -159,6 +172,8 @@ MUTEX/
 │   │   ├── mutex_conn_track.h      # Connection tracking header
 │   │   ├── mutex_packet_rewrite.c  # Packet rewriting
 │   │   ├── mutex_packet_rewrite.h  # Packet rewriting header
+│   │   ├── mutex_socks.c           # SOCKS protocol implementation
+│   │   ├── mutex_socks.h           # SOCKS protocol header
 │   │   ├── Makefile                # Build configuration
 │   │   └── test_module.sh          # Automated testing
 │   ├── userspace/         # Userspace components
