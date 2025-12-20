@@ -29,6 +29,7 @@
 #include <linux/skbuff.h>
 #include "mutex_proxy.h"
 #include "mutex_proxy_meta.h"
+#include "mutex_conn_track.h"
 
 /* Forward declaration of file_operations - will be implemented incrementally */
 static const struct file_operations mutex_proxy_fops;
@@ -176,6 +177,9 @@ static void mutex_proxy_ctx_destroy_rcu(struct rcu_head *rcu)
 					struct mutex_proxy_context, rcu);
 
 	pr_debug("mutex_proxy: destroying context for PID %d\n", ctx->owner_pid);
+
+	/* Clean up all connections for this context */
+	mutex_conn_cleanup_context(ctx);
 
 	/* Free connection tracking table */
 	if (ctx->conn_table)
@@ -1191,10 +1195,19 @@ static int __init mutex_proxy_init(void)
 	pr_info("mutex_proxy: hook priorities - PRE_ROUTING:%d POST_ROUTING:%d LOCAL_OUT:%d\n",
 		pre_routing_priority, post_routing_priority, local_out_priority);
 
+	/* Initialize connection tracking subsystem */
+	ret = mutex_conn_track_init();
+	if (ret) {
+		pr_err("mutex_proxy: failed to initialize connection tracking: %d\n", ret);
+		return ret;
+	}
+	pr_info("mutex_proxy: connection tracking initialized\n");
+
 	/* Register netfilter hooks */
 	ret = nf_register_net_hooks(&init_net, nf_hooks, ARRAY_SIZE(nf_hooks));
 	if (ret) {
 		pr_err("mutex_proxy: failed to register netfilter hooks: %d\n", ret);
+		mutex_conn_track_exit();
 		return ret;
 	}
 
@@ -1218,6 +1231,10 @@ static void __exit mutex_proxy_exit(void)
 	/* Unregister netfilter hooks */
 	nf_unregister_net_hooks(&init_net, nf_hooks, ARRAY_SIZE(nf_hooks));
 	pr_info("mutex_proxy: unregistered netfilter hooks\n");
+
+	/* Cleanup connection tracking */
+	mutex_conn_track_exit();
+	pr_info("mutex_proxy: connection tracking cleaned up\n");
 
 	pr_info("mutex_proxy: module unloaded successfully\n");
 }
