@@ -112,7 +112,6 @@ struct mutex_proxy_context *mutex_proxy_ctx_alloc(unsigned int flags)
 	ctx->config.num_servers = 0;
 	ctx->config.selection_strategy = PROXY_SELECT_ROUND_ROBIN;
 	ctx->config.current_server = 0;
-	ctx->config.flags = 0;
 
 	/* Initialize proxy selection state */
 	ctx->next_server_index = 0;
@@ -789,7 +788,7 @@ static struct nf_hook_ops nf_hooks[] = {
 };
 
 /**
- * struct packet_info - Protocol-independent packet information
+ * struct simple_packet_info - Protocol-independent packet information for inspection
  * @protocol: IP protocol number (IPPROTO_TCP, IPPROTO_UDP, IPPROTO_ICMP)
  * @saddr: Source IP address
  * @daddr: Destination IP address
@@ -798,7 +797,7 @@ static struct nf_hook_ops nf_hooks[] = {
  * @icmp_type: ICMP type (ICMP only)
  * @icmp_code: ICMP code (ICMP only)
  */
-struct packet_info {
+struct simple_packet_info {
 	u8 protocol;
 	__be32 saddr;
 	__be32 daddr;
@@ -817,7 +816,7 @@ struct packet_info {
  * Return: true on success, false on error
  */
 static bool extract_tcp_info(struct sk_buff *skb, struct iphdr *iph,
-			      struct packet_info *info)
+			      struct simple_packet_info *info)
 {
 	struct tcphdr *tcph;
 
@@ -846,7 +845,7 @@ static bool extract_tcp_info(struct sk_buff *skb, struct iphdr *iph,
  * Return: true on success, false on error
  */
 static bool extract_udp_info(struct sk_buff *skb, struct iphdr *iph,
-			      struct packet_info *info)
+			      struct simple_packet_info *info)
 {
 	struct udphdr *udph;
 
@@ -875,7 +874,7 @@ static bool extract_udp_info(struct sk_buff *skb, struct iphdr *iph,
  * Return: true on success, false on error
  */
 static bool extract_icmp_info(struct sk_buff *skb, struct iphdr *iph,
-			       struct packet_info *info)
+			       struct simple_packet_info *info)
 {
 	struct icmphdr *icmph;
 
@@ -906,7 +905,7 @@ static bool extract_icmp_info(struct sk_buff *skb, struct iphdr *iph,
  *
  * Return: true on success, false on error or unsupported protocol
  */
-static bool extract_packet_info(struct sk_buff *skb, struct packet_info *info)
+static bool extract_packet_info(struct sk_buff *skb, struct simple_packet_info *info)
 {
 	struct iphdr *iph;
 
@@ -941,7 +940,7 @@ static bool extract_packet_info(struct sk_buff *skb, struct packet_info *info)
  */
 static bool mutex_proxy_should_intercept(struct sk_buff *skb)
 {
-	struct packet_info info;
+	struct simple_packet_info info;
 	struct mutex_proxy_context *ctx;
 
 	/* Extract packet information (supports TCP/UDP/ICMP) */
@@ -986,7 +985,7 @@ static unsigned int mutex_proxy_pre_routing(void *priv,
 					     struct sk_buff *skb,
 					     const struct nf_hook_state *state)
 {
-	struct packet_info info;
+	struct simple_packet_info info;
 
 	/* Validate skb - NULL check */
 	if (unlikely(!skb)) {
@@ -1049,7 +1048,7 @@ static unsigned int mutex_proxy_post_routing(void *priv,
 					      struct sk_buff *skb,
 					      const struct nf_hook_state *state)
 {
-	struct packet_info info;
+	struct simple_packet_info info;
 
 	/* Validate skb - NULL check */
 	if (unlikely(!skb)) {
@@ -1110,7 +1109,7 @@ static unsigned int mutex_proxy_local_out(void *priv,
 					   struct sk_buff *skb,
 					   const struct nf_hook_state *state)
 {
-	struct packet_info info;
+	struct simple_packet_info info;
 
 	/* Validate skb - NULL check */
 	if (unlikely(!skb)) {

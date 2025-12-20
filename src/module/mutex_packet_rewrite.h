@@ -126,7 +126,7 @@ struct packet_info {
 
 	/* Transport layer headers (one or both may be NULL) */
 	struct tcphdr *tcph;
-	struct udph *udph;
+	struct udphdr *udph;
 
 	/* Payload information */
 	__u32 data_len;
