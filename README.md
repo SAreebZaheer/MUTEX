@@ -101,6 +101,17 @@ MUTEX is a loadable kernel module (LKM) that creates a kernel-level proxy servic
 - UDP relay support for SOCKS5
 - Comprehensive error handling and statistics
 
+✅ **Branch 9 Complete:** `feature/http-proxy-support`
+- HTTP CONNECT method for HTTPS tunneling
+- HTTP/1.0 and HTTP/1.1 protocol support
+- Basic authentication (RFC 7617) with Base64 encoding
+- Digest authentication (RFC 7616) with MD5 hashing
+- Bearer token authentication support
+- Automatic 407 challenge-response handling
+- Status line and header parsing
+- Keep-alive connection management
+- Comprehensive statistics and monitoring
+
 ## Quick Start
 
 ### Prerequisites
@@ -160,6 +171,7 @@ MUTEX/
 │   ├── BRANCH_5_SUMMARY.md # Branch 5 completion summary
 │   ├── BRANCH_7_SUMMARY.md # Branch 7 completion summary
 │   ├── BRANCH_8_SUMMARY.md # Branch 8 completion summary
+│   ├── BRANCH_9_SUMMARY.md # Branch 9 completion summary
 │   ├── NETFILTER_HOOKS.md # Netfilter integration documentation
 │   ├── PDM-sequence.md    # Project scheduling
 │   ├── COMMIT_CONVENTIONS.md
@@ -174,6 +186,8 @@ MUTEX/
 │   │   ├── mutex_packet_rewrite.h  # Packet rewriting header
 │   │   ├── mutex_socks.c           # SOCKS protocol implementation
 │   │   ├── mutex_socks.h           # SOCKS protocol header
+│   │   ├── mutex_http_proxy.c      # HTTP proxy implementation
+│   │   ├── mutex_http_proxy.h      # HTTP proxy header
 │   │   ├── Makefile                # Build configuration
 │   │   └── test_module.sh          # Automated testing
 │   ├── userspace/         # Userspace components
