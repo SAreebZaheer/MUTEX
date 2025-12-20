@@ -125,6 +125,45 @@ MUTEX is a loadable kernel module (LKM) that creates a kernel-level proxy servic
 - Integration with SOCKS and HTTP proxy protocols
 - Comprehensive statistics and monitoring
 
+✅ **Branch 11 Complete:** `feature/process-filtering`
+- Per-process proxy control via file descriptor ownership
+- Process credential tracking (PID, UID, GID, executable path)
+- Cgroup integration for process groups
+- Process whitelist/blacklist filtering
+- Process hierarchy support (parent/child relationships)
+- Executable path-based filtering
+- Dynamic rule updates through fd operations
+- Multiple filtering scopes (current, tree, session, group)
+- LRU-style cache with configurable timeout
+- Comprehensive statistics and monitoring
+- IOCTL-based userspace API
+- 45+ test suite with full API coverage
+
+✅ **Branch 12 Complete:** `feature/protocol-detection`
+- Deep packet inspection (DPI) for 24+ protocols
+- Multiple detection methods (port, pattern, heuristic, DPI, SNI parsing)
+- 5-level confidence system (none/low/medium/high/certain)
+- Protocol-specific routing rules with priorities
+- SNI extraction from TLS ClientHello
+- HTTP Host header extraction
+- Host-based routing for HTTPS and HTTP
+- Connection state caching (1024-bucket hash table)
+- Protocols: HTTP, HTTPS/TLS, SSH, DNS, SOCKS4/5, BitTorrent, QUIC, RDP, VNC, and more
+- Configurable inspection depth and timeouts
+- Comprehensive statistics and performance monitoring
+- IOCTL-based userspace API
+- 22-test suite with 95.5% pass rate
+
+✅ **Branch 20 Complete:** `feature/configuration-file`
+- JSON-based configuration file format
+- Userspace daemon for configuration management
+- Hot-reload capability via file watching
+- Configuration validation before applying
+- Support for multiple proxy contexts
+- Environment-specific configurations
+- Default configuration templates
+- Configuration backup and restore
+
 ## Quick Start
 
 ### Prerequisites
@@ -186,6 +225,9 @@ MUTEX/
 │   ├── BRANCH_8_SUMMARY.md # Branch 8 completion summary
 │   ├── BRANCH_9_SUMMARY.md # Branch 9 completion summary
 │   ├── BRANCH_10_SUMMARY.md # Branch 10 completion summary
+│   ├── BRANCH_11_SUMMARY.md # Branch 11 completion summary
+│   ├── BRANCH_12_SUMMARY.md # Branch 12 completion summary
+│   ├── BRANCH_20_SUMMARY.md # Branch 20 completion summary
 │   ├── NETFILTER_HOOKS.md # Netfilter integration documentation
 │   ├── PDM-sequence.md    # Project scheduling
 │   ├── COMMIT_CONVENTIONS.md
@@ -204,6 +246,11 @@ MUTEX/
 │   │   ├── mutex_http_proxy.h      # HTTP proxy header
 │   │   ├── mutex_transparent.c     # Transparent proxying
 │   │   ├── mutex_transparent.h     # Transparent proxying header
+│   │   ├── mutex_process_filter.c  # Process filtering
+│   │   ├── mutex_process_filter.h  # Process filtering header
+│   │   ├── mutex_protocol_detect.c # Protocol detection
+│   │   ├── mutex_protocol_detect.h # Protocol detection header
+│   │   ├── mutex_protocol_detect_types.h # Protocol types
 │   │   ├── Makefile                # Build configuration
 │   │   └── test_module.sh          # Automated testing
 │   ├── userspace/         # Userspace components
@@ -235,7 +282,7 @@ MUTEX/
 
 ## Features
 
-### Implemented (v0.6.0)
+### Implemented (v0.8.0)
 - ✅ Basic LKM structure with init/exit functions
 - ✅ Module metadata and licensing
 - ✅ Kernel logging infrastructure
@@ -278,16 +325,25 @@ MUTEX/
 - ✅ **TCP sequence/ack number adjustment**
 - ✅ **Automatic checksum recalculation**
 - ✅ **Packet validation framework**
+- ✅ **SOCKS4/4a and SOCKS5 protocol support**
+- ✅ **HTTP/HTTPS CONNECT proxy support**
+- ✅ **Transparent proxying without application modification**
+- ✅ **Per-process proxy filtering with credential tracking**
+- ✅ **Process hierarchy and cgroup support**
+- ✅ **Deep packet inspection for 24+ protocols**
+- ✅ **Protocol-specific routing rules**
+- ✅ **SNI and HTTP Host header extraction**
+- ✅ **Connection state caching for performance**
 
 ### In Development
-- 🚧 Complete packet rewriting integration with proxy routing
+- 🚧 DNS handling and leak prevention
+- 🚧 Performance optimization with per-CPU structures
 
 ### Planned (See [BRANCH_PLAN.md](docs/BRANCH_PLAN.md))
-- SOCKS and HTTP proxy protocol support
-- Transparent proxying
-- Performance optimization
-- Security hardening
-- IPv6 support
+- Advanced routing and load balancing
+- Security hardening and audit logging
+- Complete IPv6 support
+- Testing framework and benchmarks
 - And much more...
 
 ## Development
@@ -360,12 +416,20 @@ GPL (GNU General Public License)
   - Branch 3: Userspace interface ✅
   - Branch 4: Netfilter hooks ✅
   - Branch 5: Proxy configuration ✅
-- **Milestone 2:** Core Networking (Week 10) - IN PROGRESS
+- **Milestone 2:** Core Networking ✅ (Week 10)
   - Branch 6: Connection tracking ✅
-  - Branch 7: Packet rewriting 🚧
+  - Branch 7: Packet rewriting ✅
+  - Branch 8: SOCKS protocol ✅
+  - Branch 9: HTTP proxy support ✅
+- **Milestone 3:** Proxy Protocols ✅ (Week 15)
+  - Branch 10: Transparent proxying ✅
+  - Branch 11: Process filtering ✅
+  - Branch 12: Protocol detection ✅
   - Branch 20: Configuration file ✅
-- **Milestone 3:** Proxy Protocols (Week 15)
-- **Milestone 4:** Production Ready (Week 23)
+- **Milestone 4:** Production Ready (Week 23) - IN PROGRESS
+  - Branch 13: Performance optimization 🚧
+  - Branch 14: Security hardening 🚧
+  - Branch 17: DNS handling 🚧
 - **Milestone 5:** Release Candidate (Week 28)
 - **Milestone 6:** Version 1.0 (Week 31)
 
@@ -375,6 +439,6 @@ For questions or issues, please open an issue on the project repository or conta
 
 ---
 
-**Last Updated:** December 20, 2025  
-**Version:** 0.6.0  
-**Status:** In Development - Milestone 2 (Core Networking)
+**Last Updated:** December 21, 2025
+**Version:** 0.8.0
+**Status:** In Development - Milestone 4 (Production Ready)
