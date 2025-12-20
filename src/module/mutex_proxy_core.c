@@ -38,6 +38,7 @@
 #include "mutex_conn_track.h"
 #include "mutex_packet_rewrite.h"
 #include "mutex_perf_opt.h"
+#include "mutex_security.h"
 
 /* Forward declaration of file_operations - will be implemented incrementally */
 static const struct file_operations mutex_proxy_fops;
@@ -89,6 +90,16 @@ struct mutex_proxy_context *mutex_proxy_ctx_alloc(unsigned int flags)
 {
 	struct mutex_proxy_context *ctx;
 	unsigned int i;
+
+	/* Security check: require CAP_NET_ADMIN capability (Branch 14) */
+	if (!mutex_security_check_net_admin()) {
+		pr_warn("mutex_proxy: context creation denied - insufficient capabilities\n");
+		mutex_security_audit_log(AUDIT_CAPABILITY_DENIED,
+					 current_uid().val,
+					 task_pid_nr(current),
+					 "Failed to create proxy context - CAP_NET_ADMIN required");
+		return NULL;
+	}
 
 	ctx = kzalloc(sizeof(*ctx), GFP_KERNEL);
 	if (!ctx) {
@@ -155,6 +166,12 @@ struct mutex_proxy_context *mutex_proxy_ctx_alloc(unsigned int flags)
 	pr_debug("mutex_proxy: allocated context for PID %d (UID %u, GID %u)\n",
 		 ctx->owner_pid, from_kuid(&init_user_ns, ctx->owner_uid),
 		 from_kgid(&init_user_ns, ctx->owner_gid));
+
+	/* Audit log successful context creation (Branch 14) */
+	mutex_security_audit_log(AUDIT_PROXY_CREATE,
+				 from_kuid(&init_user_ns, ctx->owner_uid),
+				 ctx->owner_pid,
+				 "Proxy context created successfully");
 
 	return ctx;
 }
@@ -1219,10 +1236,21 @@ static int __init mutex_proxy_init(void)
 	}
 	pr_info("mutex_proxy: packet rewriting initialized\n");
 
+	/* Initialize security hardening subsystem (Branch 14) */
+	ret = mutex_security_init();
+	if (ret) {
+		pr_err("mutex_proxy: failed to initialize security subsystem: %d\n", ret);
+		mutex_packet_rewrite_exit();
+		mutex_conn_track_exit();
+		return ret;
+	}
+	pr_info("mutex_proxy: security hardening initialized\n");
+
 	/* Initialize performance optimization subsystem (Branch 13) */
 	ret = mutex_perf_init();
 	if (ret) {
 		pr_err("mutex_proxy: failed to initialize performance optimization: %d\n", ret);
+		mutex_security_exit();
 		mutex_packet_rewrite_exit();
 		mutex_conn_track_exit();
 		return ret;
@@ -1234,13 +1262,14 @@ static int __init mutex_proxy_init(void)
 	if (ret) {
 		pr_err("mutex_proxy: failed to register netfilter hooks: %d\n", ret);
 		mutex_perf_exit();
+		mutex_security_exit();
 		mutex_packet_rewrite_exit();
 		mutex_conn_track_exit();
 		return ret;
 	}
 
 	pr_info("mutex_proxy: registered %zu netfilter hooks\n", ARRAY_SIZE(nf_hooks));
-	pr_info("mutex_proxy: module loaded successfully (with performance optimizations)\n");
+	pr_info("mutex_proxy: module loaded successfully (with performance optimizations and security hardening)\n");
 
 	return 0;
 }
@@ -1263,6 +1292,10 @@ static void __exit mutex_proxy_exit(void)
 	/* Cleanup performance optimization (Branch 13) */
 	mutex_perf_exit();
 	pr_info("mutex_proxy: performance optimization cleaned up\n");
+
+	/* Cleanup security hardening (Branch 14) */
+	mutex_security_exit();
+	pr_info("mutex_proxy: security hardening cleaned up\n");
 
 	/* Cleanup packet rewriting */
 	mutex_packet_rewrite_exit();
