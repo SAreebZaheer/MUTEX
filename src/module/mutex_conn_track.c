@@ -19,6 +19,10 @@
 #include <linux/jiffies.h>
 #include <linux/spinlock.h>
 #include <linux/list.h>
+#include <linux/ip.h>
+#include <linux/tcp.h>
+#include <linux/udp.h>
+#include <linux/skbuff.h>
 #include "mutex_conn_track.h"
 
 /* Global connection tracking table */
@@ -565,6 +569,104 @@ static void conn_gc_handler(struct timer_list *t)
 		  jiffies + msecs_to_jiffies(CONN_GC_INTERVAL * 1000));
 }
 
+/**
+ * mutex_conn_lookup_by_skb - Find connection by packet
+ * @skb: Packet to extract tuple from
+ *
+ * Extracts the 5-tuple from a packet and looks up the connection.
+ *
+ * Return: Pointer to connection entry on success, NULL if not found
+ */
+struct mutex_conn_entry *mutex_conn_lookup_by_skb(struct sk_buff *skb)
+{
+	struct conn_tuple tuple;
+	struct iphdr *iph;
+	struct tcphdr *tcph;
+	struct udphdr *udph;
+
+	if (!skb)
+		return NULL;
+
+	memset(&tuple, 0, sizeof(tuple));
+
+	iph = ip_hdr(skb);
+	if (!iph)
+		return NULL;
+
+	tuple.src_addr.v4 = iph->saddr;
+	tuple.dst_addr.v4 = iph->daddr;
+	tuple.protocol = iph->protocol;
+	tuple.is_ipv6 = false;
+
+	if (iph->protocol == IPPROTO_TCP) {
+		tcph = tcp_hdr(skb);
+		if (!tcph)
+			return NULL;
+		tuple.src_port = tcph->source;
+		tuple.dst_port = tcph->dest;
+	} else if (iph->protocol == IPPROTO_UDP) {
+		udph = udp_hdr(skb);
+		if (!udph)
+			return NULL;
+		tuple.src_port = udph->source;
+		tuple.dst_port = udph->dest;
+	} else {
+		tuple.src_port = 0;
+		tuple.dst_port = 0;
+	}
+
+	return mutex_conn_lookup(&tuple);
+}
+
+/**
+ * mutex_conn_alloc_from_skb - Create connection from packet
+ * @skb: Packet to extract tuple from
+ *
+ * Creates a new connection entry from packet 5-tuple.
+ *
+ * Return: Pointer to new entry on success, NULL on failure
+ */
+struct mutex_conn_entry *mutex_conn_alloc_from_skb(struct sk_buff *skb)
+{
+	struct conn_tuple tuple;
+	struct iphdr *iph;
+	struct tcphdr *tcph;
+	struct udphdr *udph;
+
+	if (!skb)
+		return NULL;
+
+	memset(&tuple, 0, sizeof(tuple));
+
+	iph = ip_hdr(skb);
+	if (!iph)
+		return NULL;
+
+	tuple.src_addr.v4 = iph->saddr;
+	tuple.dst_addr.v4 = iph->daddr;
+	tuple.protocol = iph->protocol;
+	tuple.is_ipv6 = false;
+
+	if (iph->protocol == IPPROTO_TCP) {
+		tcph = tcp_hdr(skb);
+		if (!tcph)
+			return NULL;
+		tuple.src_port = tcph->source;
+		tuple.dst_port = tcph->dest;
+	} else if (iph->protocol == IPPROTO_UDP) {
+		udph = udp_hdr(skb);
+		if (!udph)
+			return NULL;
+		tuple.src_port = udph->source;
+		tuple.dst_port = udph->dest;
+	} else {
+		tuple.src_port = 0;
+		tuple.dst_port = 0;
+	}
+
+	return mutex_conn_create(&tuple, NULL);
+}
+
 /* Export symbols for use by other modules */
 EXPORT_SYMBOL_GPL(mutex_conn_track_init);
 EXPORT_SYMBOL_GPL(mutex_conn_track_exit);
@@ -577,6 +679,8 @@ EXPORT_SYMBOL_GPL(mutex_conn_set_state);
 EXPORT_SYMBOL_GPL(mutex_conn_refresh);
 EXPORT_SYMBOL_GPL(mutex_conn_update_stats);
 EXPORT_SYMBOL_GPL(mutex_conn_cleanup_context);
+EXPORT_SYMBOL_GPL(mutex_conn_lookup_by_skb);
+EXPORT_SYMBOL_GPL(mutex_conn_alloc_from_skb);
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("MUTEX Team");
