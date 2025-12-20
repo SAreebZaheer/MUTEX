@@ -9,6 +9,12 @@
  * It maintains a hash table of active connections, tracks original and proxied
  * addresses, and handles connection lifecycle management with automatic
  * garbage collection.
+ *
+ * PERFORMANCE OPTIMIZATIONS (Branch 13):
+ * - Uses optimized hash functions from mutex_perf_opt for better distribution
+ * - Integrates per-CPU connection cache for fast lookups
+ * - Uses slab cache allocation from connection pool
+ * - RCU-protected reads for hot path lock-free access
  */
 
 #include <linux/module.h>
@@ -24,6 +30,7 @@
 #include <linux/udp.h>
 #include <linux/skbuff.h>
 #include "mutex_conn_track.h"
+#include "mutex_perf_opt.h"
 
 /* Global connection tracking table */
 static struct conn_track_table *global_conn_table = NULL;
@@ -145,6 +152,7 @@ struct mutex_conn_entry *mutex_conn_create(const struct conn_tuple *tuple,
 	struct mutex_conn_entry *conn;
 	u32 hash;
 	unsigned int timeout_sec;
+	unsigned int cpu = smp_processor_id();
 
 	if (!global_conn_table || !tuple || !ctx) {
 		pr_err("mutex_conn_track: invalid parameters for create\n");
@@ -157,11 +165,16 @@ struct mutex_conn_entry *mutex_conn_create(const struct conn_tuple *tuple,
 		return NULL;
 	}
 
-	/* Allocate new connection entry */
-	conn = kzalloc(sizeof(*conn), GFP_ATOMIC);
+	/* Allocate from performance-optimized pool (Branch 13) */
+	conn = mutex_perf_conn_alloc();
 	if (!conn) {
-		pr_err("mutex_conn_track: failed to allocate connection\n");
-		return NULL;
+		/* Fallback to regular allocation */
+		conn = kzalloc(sizeof(*conn), GFP_ATOMIC);
+		if (!conn) {
+			pr_err("mutex_conn_track: failed to allocate connection\n");
+			mutex_perf_stats_inc_dropped(cpu);
+			return NULL;
+		}
 	}
 
 	/* Initialize connection tuple */
@@ -206,17 +219,17 @@ struct mutex_conn_entry *mutex_conn_create(const struct conn_tuple *tuple,
 	conn->ack_delta = 0;
 	conn->flags = 0;
 
-	/* Set up timeout timer */
-	timeout_sec = mutex_conn_get_timeout(conn->proto, conn->state);
-	conn->timeout = jiffies + msecs_to_jiffies(timeout_sec * 1000);
-	timer_setup(&conn->timer, conn_timeout_handler, 0);
-	mod_timer(&conn->timer, conn->timeout);
+	/* Compute optimized hash (Branch 13) */
+	hash = mutex_perf_hash_tuple(tuple);
 
 	/* Insert into hash table */
-	hash = mutex_conn_hash(tuple);
-	spin_lock_bh(&global_conn_table->locks[hash]);
-	hlist_add_head(&conn->hash_node, &global_conn_table->buckets[hash]);
-	spin_unlock_bh(&global_conn_table->locks[hash]);
+	spin_lock_bh(&global_conn_table->locks[hash % CONN_TRACK_HASH_SIZE]);
+	hlist_add_head_rcu(&conn->hash_node,
+			   &global_conn_table->buckets[hash % CONN_TRACK_HASH_SIZE]);
+	spin_unlock_bh(&global_conn_table->locks[hash % CONN_TRACK_HASH_SIZE]);
+
+	/* Add to per-CPU cache for fast lookup (Branch 13) */
+	mutex_perf_cache_insert(hash, conn);
 
 	/* Add to global connection list */
 	spin_lock_bh(&global_conn_table->list_lock);
@@ -224,6 +237,12 @@ struct mutex_conn_entry *mutex_conn_create(const struct conn_tuple *tuple,
 	spin_unlock_bh(&global_conn_table->list_lock);
 
 	/* Increment global counter */
+	atomic_inc(&global_conn_table->count);
+
+	pr_debug("mutex_conn_track: created connection (proto=%u, state=%u, hash=0x%x)\n",
+		 conn->proto, conn->state, hash);
+
+	return conn;
 	atomic_inc(&global_conn_table->count);
 
 	pr_debug("mutex_conn_track: created connection (proto=%u, state=%u)\n",
@@ -238,6 +257,7 @@ struct mutex_conn_entry *mutex_conn_create(const struct conn_tuple *tuple,
  *
  * Searches the hash table for a connection matching the given tuple.
  * Increments reference count if found to prevent deletion.
+ * Uses per-CPU cache and RCU for performance (Branch 13).
  *
  * Return: Pointer to entry on success, NULL if not found
  */
@@ -246,17 +266,57 @@ struct mutex_conn_entry *mutex_conn_lookup(const struct conn_tuple *tuple)
 	struct mutex_conn_entry *conn;
 	u32 hash;
 	bool found = false;
+	unsigned int cpu = smp_processor_id();
+	int chain_length = 0;
+	ktime_t start;
 
 	if (!global_conn_table || !tuple)
 		return NULL;
 
-	hash = mutex_conn_hash(tuple);
+	/* Profile lookup time (Branch 13) */
+	mutex_perf_profile_start(&start);
 
+	/* Try per-CPU cache first (Branch 13) */
+	hash = mutex_perf_hash_tuple(tuple);
+	conn = mutex_perf_cache_lookup(hash);
+	if (conn) {
+		/* Cache hit - verify tuple matches */
+		bool match = true;
+		if (conn->tuple.protocol != tuple->protocol ||
+		    conn->tuple.is_ipv6 != tuple->is_ipv6 ||
+		    conn->tuple.src_port != tuple->src_port ||
+		    conn->tuple.dst_port != tuple->dst_port) {
+			match = false;
+		} else if (tuple->is_ipv6) {
+			if (memcmp(&conn->tuple.src_addr.v6, &tuple->src_addr.v6,
+				   sizeof(struct in6_addr)) != 0 ||
+			    memcmp(&conn->tuple.dst_addr.v6, &tuple->dst_addr.v6,
+				   sizeof(struct in6_addr)) != 0)
+				match = false;
+		} else {
+			if (conn->tuple.src_addr.v4 != tuple->src_addr.v4 ||
+			    conn->tuple.dst_addr.v4 != tuple->dst_addr.v4)
+				match = false;
+		}
+
+		if (match) {
+			atomic_inc(&conn->refcount);
+			mutex_perf_stats_add_time(cpu,
+						  mutex_perf_profile_end(start));
+			return conn;
+		}
+		/* Cache entry stale - invalidate */
+		mutex_perf_cache_invalidate(hash);
+	}
+
+	/* Cache miss - look up in hash table with RCU (Branch 13) */
 	rcu_read_lock();
-	spin_lock_bh(&global_conn_table->locks[hash]);
+	hash = hash % CONN_TRACK_HASH_SIZE;
 
-	hlist_for_each_entry(conn, &global_conn_table->buckets[hash],
-			     hash_node) {
+	hlist_for_each_entry_rcu(conn, &global_conn_table->buckets[hash],
+				 hash_node) {
+		chain_length++;
+
 		/* Compare connection tuples */
 		if (conn->tuple.protocol != tuple->protocol)
 			continue;
@@ -287,11 +347,17 @@ struct mutex_conn_entry *mutex_conn_lookup(const struct conn_tuple *tuple)
 		/* Found matching connection */
 		atomic_inc(&conn->refcount);
 		found = true;
+
+		/* Add to cache for next lookup (Branch 13) */
+		mutex_perf_cache_insert(mutex_perf_hash_tuple(tuple), conn);
 		break;
 	}
 
-	spin_unlock_bh(&global_conn_table->locks[hash]);
 	rcu_read_unlock();
+
+	/* Update hash statistics (Branch 13) */
+	mutex_perf_hash_stats_update(chain_length);
+	mutex_perf_stats_add_time(cpu, mutex_perf_profile_end(start));
 
 	return found ? conn : NULL;
 }
@@ -324,7 +390,9 @@ void mutex_conn_put(struct mutex_conn_entry *conn)
 	if (atomic_dec_and_test(&conn->refcount)) {
 		/* Last reference - free the connection */
 		del_timer_sync(&conn->timer);
-		kfree(conn);
+
+		/* Use performance-optimized free (Branch 13) */
+		mutex_perf_conn_free(conn);
 	}
 }
 

@@ -174,8 +174,8 @@ struct protocol_conn_state {
 	struct rcu_head rcu;
 };
 
-/* Protocol detection statistics */
-struct protocol_detection_stats {
+/* Internal protocol detection statistics (kernel-side with atomic counters) */
+struct protocol_detection_internal_stats {
 	/* Per-protocol counters */
 	atomic64_t proto_detected[PROTO_MAX];
 	atomic64_t proto_errors[PROTO_MAX];
@@ -219,8 +219,8 @@ struct protocol_detect_context {
 	DECLARE_HASHTABLE(connections, 10);  /* 1024 buckets */
 	spinlock_t conn_lock;
 
-	/* Statistics */
-	struct protocol_detection_stats stats;
+	/* Statistics (internal atomic counters) */
+	struct protocol_detection_internal_stats stats;
 
 	/* Defaults */
 	enum routing_action default_action;
@@ -376,6 +376,35 @@ const char *protocol_confidence_name(enum detection_confidence confidence);
  * Returns: String name of routing action
  */
 const char *protocol_action_name(enum routing_action action);
+
+/**
+ * struct protocol_detection_stats - Userspace-compatible statistics
+ * (exported to userspace with u64 counters)
+ */
+struct protocol_detection_stats {
+	/* Per-protocol counters */
+	u64 proto_detected[PROTO_MAX];
+	u64 proto_errors[PROTO_MAX];
+
+	/* Detection method statistics */
+	u64 method_port_hits;
+	u64 method_pattern_hits;
+	u64 method_heuristic_hits;
+	u64 method_dpi_hits;
+	u64 method_sni_hits;
+	u64 method_handshake_hits;
+
+	/* Routing statistics */
+	u64 routed_proxy;
+	u64 routed_direct;
+	u64 routed_blocked;
+
+	/* Performance metrics */
+	u64 total_packets;
+	u64 total_inspections;
+	u64 cache_hits;
+	u64 cache_misses;
+};
 
 /**
  * protocol_detect_get_stats() - Get current statistics

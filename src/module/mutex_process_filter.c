@@ -27,6 +27,7 @@
 #include <linux/list.h>
 #include <linux/string.h>
 #include <linux/uaccess.h>
+#include <net/sock.h>
 #include "mutex_process_filter.h"
 
 /* ========== Module Parameters ========== */
@@ -278,8 +279,12 @@ int process_filter_get_exe_path(struct task_struct *task, char *buf,
 	if (!mm)
 		return -ENOENT;
 
-	/* Get executable file */
-	exe_file = get_mm_exe_file(mm);
+	/* Get executable file - use RCU to access mm->exe_file directly */
+	rcu_read_lock();
+	exe_file = rcu_dereference(mm->exe_file);
+	if (exe_file)
+		get_file(exe_file);
+	rcu_read_unlock();
 	mmput(mm);
 
 	if (!exe_file)
@@ -330,13 +335,9 @@ int process_filter_get_cgroup_path(struct task_struct *task, char *buf,
 	rcu_read_lock();
 	cgrp = task_cgroup(task, 0);  /* Get from first hierarchy */
 	if (cgrp) {
-		/* Try to get cgroup path */
-		path = cgroup_path_ns(cgrp, &init_cgroup_ns);
-		if (path) {
-			strncpy(buf, path, buflen - 1);
-			buf[buflen - 1] = '\0';
-			kfree(path);
-		} else {
+		/* Use cgroup_path with buffer (kernel 6.8+ API) */
+		char *result = cgroup_path(cgrp, buf, buflen);
+		if (!result) {
 			strncpy(buf, "/", buflen);
 			ret = -ENOMEM;
 		}
@@ -372,7 +373,7 @@ int process_filter_get_credentials(struct process_credentials *creds)
 	creds->pid = task_pid_nr(task);
 	creds->tgid = task_tgid_nr(task);
 	creds->ppid = task_ppid_nr(task);
-	creds->sid = task_session_nr(task);
+	creds->sid = task_session_vnr(task);
 	creds->pgid = task_pgrp_nr(task);
 
 	/* Credentials */
@@ -422,7 +423,7 @@ int process_filter_get_pid_credentials(pid_t pid,
 	memset(creds, 0, sizeof(*creds));
 
 	rcu_read_lock();
-	task = find_task_by_vpid(pid);
+	task = pid_task(find_vpid(pid), PIDTYPE_PID);
 	if (!task) {
 		rcu_read_unlock();
 		return -ESRCH;
@@ -436,7 +437,7 @@ int process_filter_get_pid_credentials(pid_t pid,
 	creds->pid = task_pid_nr(task);
 	creds->tgid = task_tgid_nr(task);
 	creds->ppid = task_ppid_nr(task);
-	creds->sid = task_session_nr(task);
+	creds->sid = task_session_vnr(task);
 	creds->pgid = task_pgrp_nr(task);
 
 	/* Credentials */
@@ -488,7 +489,7 @@ bool process_filter_is_child_of(pid_t child_pid, pid_t parent_pid)
 		return true;
 
 	rcu_read_lock();
-	task = find_task_by_vpid(child_pid);
+	task = pid_task(find_vpid(child_pid), PIDTYPE_PID);
 	if (!task) {
 		rcu_read_unlock();
 		return false;
@@ -506,7 +507,7 @@ bool process_filter_is_child_of(pid_t child_pid, pid_t parent_pid)
 		if (current_ppid == 0 || current_ppid == 1)
 			break;
 
-		task = find_task_by_vpid(current_ppid);
+		task = pid_task(find_vpid(current_ppid), PIDTYPE_PID);
 		depth++;
 	}
 
@@ -525,9 +526,9 @@ bool process_filter_is_in_session(pid_t pid, pid_t sid)
 	bool in_session = false;
 
 	rcu_read_lock();
-	task = find_task_by_vpid(pid);
+	task = pid_task(find_vpid(pid), PIDTYPE_PID);
 	if (task) {
-		task_sid = task_session_nr(task);
+		task_sid = task_session_vnr(task);
 		in_session = (task_sid == sid);
 	}
 	rcu_read_unlock();
@@ -546,7 +547,7 @@ bool process_filter_is_in_group(pid_t pid, pid_t pgid)
 	bool in_group = false;
 
 	rcu_read_lock();
-	task = find_task_by_vpid(pid);
+	task = pid_task(find_vpid(pid), PIDTYPE_PID);
 	if (task) {
 		task_pgid = task_pgrp_nr(task);
 		in_group = (task_pgid == pgid);
@@ -605,7 +606,7 @@ bool process_filter_is_in_cgroup(pid_t pid, const char *cgroup_path,
 		return false;
 
 	rcu_read_lock();
-	task = find_task_by_vpid(pid);
+	task = pid_task(find_vpid(pid), PIDTYPE_PID);
 	if (!task) {
 		rcu_read_unlock();
 		return false;
@@ -915,14 +916,18 @@ bool process_filter_should_proxy(struct process_filter_context *ctx,
 		return true;
 
 	/* Get PID from current context or skb */
-	if (skb && skb->sk && skb->sk->sk_socket &&
-	    skb->sk->sk_socket->file) {
-		/* Try to get PID from socket file */
-		struct file *file = skb->sk->sk_socket->file;
-		if (file->f_owner.pid)
-			pid = pid_vnr(file->f_owner.pid);
-		else
+	if (skb && skb->sk) {
+		struct sock *sk = skb->sk;
+		if (sk && sk->sk_socket && sk->sk_socket->file) {
+			/* Try to get PID from socket file */
+			struct file *file = sk->sk_socket->file;
+			if (file->f_owner.pid)
+				pid = pid_vnr(file->f_owner.pid);
+			else
+				pid = task_pid_nr(current);
+		} else {
 			pid = task_pid_nr(current);
+		}
 	} else {
 		pid = task_pid_nr(current);
 	}
