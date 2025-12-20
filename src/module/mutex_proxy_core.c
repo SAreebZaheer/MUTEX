@@ -30,6 +30,7 @@
 #include "mutex_proxy.h"
 #include "mutex_proxy_meta.h"
 #include "mutex_conn_track.h"
+#include "mutex_packet_rewrite.h"
 
 /* Forward declaration of file_operations - will be implemented incrementally */
 static const struct file_operations mutex_proxy_fops;
@@ -1203,10 +1204,20 @@ static int __init mutex_proxy_init(void)
 	}
 	pr_info("mutex_proxy: connection tracking initialized\n");
 
+	/* Initialize packet rewriting module */
+	ret = mutex_packet_rewrite_init();
+	if (ret) {
+		pr_err("mutex_proxy: failed to initialize packet rewriting: %d\n", ret);
+		mutex_conn_track_exit();
+		return ret;
+	}
+	pr_info("mutex_proxy: packet rewriting initialized\n");
+
 	/* Register netfilter hooks */
 	ret = nf_register_net_hooks(&init_net, nf_hooks, ARRAY_SIZE(nf_hooks));
 	if (ret) {
 		pr_err("mutex_proxy: failed to register netfilter hooks: %d\n", ret);
+		mutex_packet_rewrite_exit();
 		mutex_conn_track_exit();
 		return ret;
 	}
@@ -1231,6 +1242,10 @@ static void __exit mutex_proxy_exit(void)
 	/* Unregister netfilter hooks */
 	nf_unregister_net_hooks(&init_net, nf_hooks, ARRAY_SIZE(nf_hooks));
 	pr_info("mutex_proxy: unregistered netfilter hooks\n");
+
+	/* Cleanup packet rewriting */
+	mutex_packet_rewrite_exit();
+	pr_info("mutex_proxy: packet rewriting cleaned up\n");
 
 	/* Cleanup connection tracking */
 	mutex_conn_track_exit();

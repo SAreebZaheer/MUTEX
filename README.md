@@ -37,7 +37,7 @@ MUTEX is a loadable kernel module (LKM) that creates a kernel-level proxy servic
 - Example programs demonstrating API usage
 - Comprehensive API documentation
 - Complete build system with install/uninstall support
-- 
+-
 ✅ **Branch 4 Complete:** `feature/netfilter-hooks`
 - Netfilter hook integration at PRE_ROUTING, POST_ROUTING, LOCAL_OUT
 - Multi-protocol packet filtering (TCP, UDP, ICMP)
@@ -58,6 +58,37 @@ MUTEX is a loadable kernel module (LKM) that creates a kernel-level proxy servic
 - Priority-based failover mechanism
 - IPv4/IPv6 address support
 
+✅ **Branch 6 Complete:** `feature/connection-tracking`
+- Hash table-based connection tracking (1024 buckets)
+- Per-connection state management (NEW, ESTABLISHING, ESTABLISHED, CLOSING)
+- Connection 5-tuple tracking (src/dst IP, src/dst port, protocol)
+- IPv4 and IPv6 support
+- TCP sequence number tracking for transparent proxying
+- Automatic connection timeout and garbage collection
+- Per-connection statistics (bytes, packets, timestamps)
+- RCU-protected lookups for high performance
+- Per-bucket locking for scalability
+
+✅ **Branch 20 Complete:** `feature/configuration-file`
+- JSON-based configuration file format
+- Userspace daemon for configuration management
+- Hot-reload capability via file watching
+- Configuration validation before applying
+- Support for multiple proxy contexts
+- Environment-specific configurations
+- Default configuration templates
+- Configuration backup and restore
+
+🚧 **Branch 7 In Progress:** `feature/packet-rewriting`
+- IP header modification (IPv4/IPv6 address rewriting)
+- TCP header modifications (ports, sequence/ack numbers)
+- UDP header modifications (ports)
+- Automatic checksum recalculation (IP, TCP, UDP)
+- Packet validation before and after rewriting
+- Support for both IPv4 and IPv6 packets
+- MTU checking and fragmentation handling
+- Packet cloning for inspection
+- Comprehensive rewrite statistics
 
 ## Quick Start
 
@@ -122,12 +153,14 @@ MUTEX/
 │   └── TESTING.md
 ├── src/                    # Source code
 │   ├── module/            # Kernel module
-│   │   ├── mutex_proxy.c  # Main module implementation
-│   │   ├── mutex_proxy.h  # Module header
-│   │   ├── syscall.c      # System call implementation
-│   │   ├── file_ops.c     # File descriptor operations
-│   │   ├── Makefile       # Build configuration
-│   │   └── test_module.sh # Automated testing
+│   │   ├── mutex_proxy_core.c      # Main module implementation
+│   │   ├── mutex_proxy.h           # Module header
+│   │   ├── mutex_conn_track.c      # Connection tracking
+│   │   ├── mutex_conn_track.h      # Connection tracking header
+│   │   ├── mutex_packet_rewrite.c  # Packet rewriting
+│   │   ├── mutex_packet_rewrite.h  # Packet rewriting header
+│   │   ├── Makefile                # Build configuration
+│   │   └── test_module.sh          # Automated testing
 │   ├── userspace/         # Userspace components
 │   │   ├── lib/           # libmutex library
 │   │   │   ├── libmutex.h # Public API header
@@ -157,7 +190,7 @@ MUTEX/
 
 ## Features
 
-### Implemented (v0.4.0)
+### Implemented (v0.6.0)
 - ✅ Basic LKM structure with init/exit functions
 - ✅ Module metadata and licensing
 - ✅ Kernel logging infrastructure
@@ -188,13 +221,23 @@ MUTEX/
 - ✅ **Proxy selection strategies (round-robin, failover, random)**
 - ✅ **Comprehensive configuration validation**
 - ✅ **Thread-safe configuration operations**
+- ✅ **Connection tracking with hash table (1024 buckets)**
+- ✅ **Per-connection state management and statistics**
+- ✅ **TCP sequence number tracking**
+- ✅ **IPv4 and IPv6 connection tracking**
+- ✅ **RCU-protected connection lookups**
+- ✅ **JSON configuration file support**
+- ✅ **Configuration hot-reload capability**
+- ✅ **IP header modification (IPv4/IPv6)**
+- ✅ **TCP/UDP port rewriting**
+- ✅ **TCP sequence/ack number adjustment**
+- ✅ **Automatic checksum recalculation**
+- ✅ **Packet validation framework**
 
 ### In Development
-- 🚧 Netfilter hooks for packet interception
+- 🚧 Complete packet rewriting integration with proxy routing
 
 ### Planned (See [BRANCH_PLAN.md](docs/BRANCH_PLAN.md))
-- Connection tracking integration
-- Packet rewriting and NAT
 - SOCKS and HTTP proxy protocol support
 - Transparent proxying
 - Performance optimization
@@ -270,8 +313,12 @@ GPL (GNU General Public License)
   - Branch 1: Module structure ✅
   - Branch 2: System call and fd operations ✅
   - Branch 3: Userspace interface ✅
+  - Branch 4: Netfilter hooks ✅
   - Branch 5: Proxy configuration ✅
-- **Milestone 2:** Core Networking (Week 10)
+- **Milestone 2:** Core Networking (Week 10) - IN PROGRESS
+  - Branch 6: Connection tracking ✅
+  - Branch 7: Packet rewriting 🚧
+  - Branch 20: Configuration file ✅
 - **Milestone 3:** Proxy Protocols (Week 15)
 - **Milestone 4:** Production Ready (Week 23)
 - **Milestone 5:** Release Candidate (Week 28)
@@ -283,6 +330,6 @@ For questions or issues, please open an issue on the project repository or conta
 
 ---
 
-**Last Updated:** December 17, 2025  
-**Version:** 0.4.0  
-**Status:** In Development
+**Last Updated:** December 20, 2025  
+**Version:** 0.6.0  
+**Status:** In Development - Milestone 2 (Core Networking)
