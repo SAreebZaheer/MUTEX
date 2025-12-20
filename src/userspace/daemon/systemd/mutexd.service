@@ -1,0 +1,32 @@
+[Unit]
+Description=MUTEX Kernel-Level Proxy Daemon
+Documentation=https://github.com/SAreebZaheer/MUTEX
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=forking
+PIDFile=/var/run/mutexd.pid
+ExecStart=/usr/local/bin/mutexd -c /etc/mutex/mutex.conf
+ExecReload=/bin/kill -HUP $MAINPID
+ExecStop=/bin/kill -TERM $MAINPID
+Restart=on-failure
+RestartSec=5s
+
+# Security hardening
+PrivateTmp=yes
+NoNewPrivileges=false
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/run /var/log
+
+# Capabilities (daemon needs network admin for kernel module interaction)
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=512
+
+[Install]
+WantedBy=multi-user.target
