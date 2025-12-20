@@ -112,6 +112,19 @@ MUTEX is a loadable kernel module (LKM) that creates a kernel-level proxy servic
 - Keep-alive connection management
 - Comprehensive statistics and monitoring
 
+✅ **Branch 10 Complete:** `feature/transparent-proxying`
+- Transparent connection interception without application modification
+- NAT table with hash-based lookup (1024 buckets)
+- Flexible bypass rules (address, network, port, protocol, process)
+- Address classification (local, private, public, multicast, link-local)
+- Multiple proxy modes (disabled, process, global, cgroup)
+- Process filtering with child process inheritance
+- Auto-protocol selection (SOCKS4/5, HTTP)
+- DNS interception framework with leak prevention
+- Bidirectional packet rewriting for transparent proxying
+- Integration with SOCKS and HTTP proxy protocols
+- Comprehensive statistics and monitoring
+
 ## Quick Start
 
 ### Prerequisites
@@ -172,6 +185,7 @@ MUTEX/
 │   ├── BRANCH_7_SUMMARY.md # Branch 7 completion summary
 │   ├── BRANCH_8_SUMMARY.md # Branch 8 completion summary
 │   ├── BRANCH_9_SUMMARY.md # Branch 9 completion summary
+│   ├── BRANCH_10_SUMMARY.md # Branch 10 completion summary
 │   ├── NETFILTER_HOOKS.md # Netfilter integration documentation
 │   ├── PDM-sequence.md    # Project scheduling
 │   ├── COMMIT_CONVENTIONS.md
@@ -188,6 +202,8 @@ MUTEX/
 │   │   ├── mutex_socks.h           # SOCKS protocol header
 │   │   ├── mutex_http_proxy.c      # HTTP proxy implementation
 │   │   ├── mutex_http_proxy.h      # HTTP proxy header
+│   │   ├── mutex_transparent.c     # Transparent proxying
+│   │   ├── mutex_transparent.h     # Transparent proxying header
 │   │   ├── Makefile                # Build configuration
 │   │   └── test_module.sh          # Automated testing
 │   ├── userspace/         # Userspace components
