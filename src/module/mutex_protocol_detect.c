@@ -943,25 +943,25 @@ void protocol_detect_get_stats(struct protocol_detect_context *ctx,
 		return;
 
 	for (i = 0; i < PROTO_MAX; i++) {
-		stats->proto_detected[i] = atomic64_read(&ctx->stats.proto_detected[i]);
-		stats->proto_errors[i] = atomic64_read(&ctx->stats.proto_errors[i]);
+		stats->proto_detected[i] = (u64)atomic64_read(&ctx->stats.proto_detected[i]);
+		stats->proto_errors[i] = (u64)atomic64_read(&ctx->stats.proto_errors[i]);
 	}
 
-	stats->method_port_hits = atomic64_read(&ctx->stats.method_port_hits);
-	stats->method_pattern_hits = atomic64_read(&ctx->stats.method_pattern_hits);
-	stats->method_heuristic_hits = atomic64_read(&ctx->stats.method_heuristic_hits);
-	stats->method_dpi_hits = atomic64_read(&ctx->stats.method_dpi_hits);
-	stats->method_sni_hits = atomic64_read(&ctx->stats.method_sni_hits);
-	stats->method_handshake_hits = atomic64_read(&ctx->stats.method_handshake_hits);
+	stats->method_port_hits = (u64)atomic64_read(&ctx->stats.method_port_hits);
+	stats->method_pattern_hits = (u64)atomic64_read(&ctx->stats.method_pattern_hits);
+	stats->method_heuristic_hits = (u64)atomic64_read(&ctx->stats.method_heuristic_hits);
+	stats->method_dpi_hits = (u64)atomic64_read(&ctx->stats.method_dpi_hits);
+	stats->method_sni_hits = (u64)atomic64_read(&ctx->stats.method_sni_hits);
+	stats->method_handshake_hits = (u64)atomic64_read(&ctx->stats.method_handshake_hits);
 
-	stats->routed_proxy = atomic64_read(&ctx->stats.routed_proxy);
-	stats->routed_direct = atomic64_read(&ctx->stats.routed_direct);
-	stats->routed_blocked = atomic64_read(&ctx->stats.routed_blocked);
+	stats->routed_proxy = (u64)atomic64_read(&ctx->stats.routed_proxy);
+	stats->routed_direct = (u64)atomic64_read(&ctx->stats.routed_direct);
+	stats->routed_blocked = (u64)atomic64_read(&ctx->stats.routed_blocked);
 
-	stats->total_packets = atomic64_read(&ctx->stats.total_packets);
-	stats->total_inspections = atomic64_read(&ctx->stats.total_inspections);
-	stats->cache_hits = atomic64_read(&ctx->stats.cache_hits);
-	stats->cache_misses = atomic64_read(&ctx->stats.cache_misses);
+	stats->total_packets = (u64)atomic64_read(&ctx->stats.total_packets);
+	stats->total_inspections = (u64)atomic64_read(&ctx->stats.total_inspections);
+	stats->cache_hits = (u64)atomic64_read(&ctx->stats.cache_hits);
+	stats->cache_misses = (u64)atomic64_read(&ctx->stats.cache_misses);
 }
 
 /**

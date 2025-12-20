@@ -8,6 +8,12 @@
  * This file implements the mprox_create() syscall that returns
  * a file descriptor for proxy control, following the "everything is a file"
  * paradigm similar to eventfd(), timerfd(), and signalfd().
+ *
+ * PERFORMANCE OPTIMIZATIONS (Branch 13):
+ * - Integrated performance optimization subsystem
+ * - Per-CPU statistics and connection caching
+ * - RCU-protected configuration reads
+ * - Slab cache for efficient memory allocation
  */
 
 #include <linux/syscalls.h>
@@ -31,6 +37,7 @@
 #include "mutex_proxy_meta.h"
 #include "mutex_conn_track.h"
 #include "mutex_packet_rewrite.h"
+#include "mutex_perf_opt.h"
 
 /* Forward declaration of file_operations - will be implemented incrementally */
 static const struct file_operations mutex_proxy_fops;
@@ -1212,17 +1219,28 @@ static int __init mutex_proxy_init(void)
 	}
 	pr_info("mutex_proxy: packet rewriting initialized\n");
 
+	/* Initialize performance optimization subsystem (Branch 13) */
+	ret = mutex_perf_init();
+	if (ret) {
+		pr_err("mutex_proxy: failed to initialize performance optimization: %d\n", ret);
+		mutex_packet_rewrite_exit();
+		mutex_conn_track_exit();
+		return ret;
+	}
+	pr_info("mutex_proxy: performance optimization initialized\n");
+
 	/* Register netfilter hooks */
 	ret = nf_register_net_hooks(&init_net, nf_hooks, ARRAY_SIZE(nf_hooks));
 	if (ret) {
 		pr_err("mutex_proxy: failed to register netfilter hooks: %d\n", ret);
+		mutex_perf_exit();
 		mutex_packet_rewrite_exit();
 		mutex_conn_track_exit();
 		return ret;
 	}
 
 	pr_info("mutex_proxy: registered %zu netfilter hooks\n", ARRAY_SIZE(nf_hooks));
-	pr_info("mutex_proxy: module loaded successfully\n");
+	pr_info("mutex_proxy: module loaded successfully (with performance optimizations)\n");
 
 	return 0;
 }
@@ -1241,6 +1259,10 @@ static void __exit mutex_proxy_exit(void)
 	/* Unregister netfilter hooks */
 	nf_unregister_net_hooks(&init_net, nf_hooks, ARRAY_SIZE(nf_hooks));
 	pr_info("mutex_proxy: unregistered netfilter hooks\n");
+
+	/* Cleanup performance optimization (Branch 13) */
+	mutex_perf_exit();
+	pr_info("mutex_proxy: performance optimization cleaned up\n");
 
 	/* Cleanup packet rewriting */
 	mutex_packet_rewrite_exit();
