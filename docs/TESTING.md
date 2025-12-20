@@ -573,8 +573,377 @@ sudo ./run_all_tests.sh
 2. Proxy application logic not yet implemented (syscall provides interface only)
 3. Network hook integration pending (Branch 3)
 
+---
+
+## ⚠️ CRITICAL: System Call Availability Limitation
+
+### Current State (As of Branch 7)
+
+**IMPORTANT:** The `mprox_create()` syscall (syscall #471) has been added to the Linux kernel source code in the `linux/` submodule, but:
+
+- ✅ The syscall is defined in kernel source
+- ✅ The syscall table entry exists
+- ❌ **The kernel has NOT been compiled**
+- ❌ **Your running kernel does NOT have this syscall**
+
+### Impact on Testing
+
+**What Works:**
+- ✅ Kernel module compilation and loading
+- ✅ Netfilter hooks (packet interception)
+- ✅ Connection tracking functionality
+- ✅ Packet rewriting operations
+- ✅ Module parameters and debug logging
+
+**What Doesn't Work:**
+- ❌ Userspace syscall invocation
+- ❌ File descriptor creation from userspace
+- ❌ Userspace library and CLI tools
+- ❌ Example programs requiring syscall
+
+### Workaround: Module-Only Testing
+
+Until you compile a custom kernel, test without syscall:
+
+```bash
+# Test module loading
+cd src/module
+make clean && make
+sudo insmod build/mutex_proxy.ko
+
+# Verify components initialized
+sudo dmesg | tail -30
+# Should see:
+# - connection tracking initialized
+# - packet rewriting initialized  
+# - registered 3 netfilter hooks
+
+# Enable debug logging
+echo 1 | sudo tee /sys/module/mutex_proxy/parameters/debug
+echo 1 | sudo tee /sys/module/mutex_packet_rewrite/parameters/debug
+
+# Generate test traffic
+ping -c 10 8.8.8.8
+
+# Check packet processing
+sudo dmesg | grep "mutex_pkt"
+
+# View statistics on unload
+sudo rmmod mutex_proxy
+sudo dmesg | tail -30
+```
+
+### To Enable Syscall: Compile Custom Kernel
+
+For full testing with userspace programs:
+
+1. **Configure kernel:**
+   ```bash
+   cd linux
+   make menuconfig  # or use existing .config
+   ```
+
+2. **Compile (takes hours):**
+   ```bash
+   make -j$(nproc)
+   ```
+
+3. **Install modules and kernel:**
+   ```bash
+   sudo make modules_install
+   sudo make install
+   sudo update-grub  # or bootctl update
+   ```
+
+4. **Reboot into new kernel:**
+   ```bash
+   sudo reboot
+   uname -r  # Verify new kernel version
+   ```
+
+5. **Then test userspace:**
+   ```bash
+   cd src/userspace
+   make
+   LD_LIBRARY_PATH=lib ./cli/mprox create
+   ```
+
+**⚠️ WARNING:** Custom kernel compilation can take 1-4 hours and may render system unbootable if done incorrectly. Test in VM first!
+
+---
+
+## Branch 7: Packet Rewriting Tests
+
+### Automated Test Script
+
+Create `src/module/test_packet_rewrite.sh`:
+
+```bash
+#!/bin/bash
+# Test packet rewriting module
+
+set -e
+
+MODULE="build/mutex_proxy.ko"
+
+echo "=== Testing Packet Rewriting Module ==="
+
+# Load module
+sudo insmod "$MODULE"
+echo "✓ Module loaded"
+
+# Enable debug
+echo 1 | sudo tee /sys/module/mutex_packet_rewrite/parameters/debug > /dev/null
+echo "✓ Debug enabled"
+
+# Generate ICMP traffic
+echo "Generating ICMP traffic..."
+ping -c 5 8.8.8.8 > /dev/null 2>&1 || true
+
+# Generate TCP traffic
+echo "Generating TCP traffic..."
+curl -s http://example.com > /dev/null 2>&1 || true
+
+# Generate UDP traffic
+echo "Generating UDP traffic..."
+nslookup google.com > /dev/null 2>&1 || true
+
+# Check logs
+if sudo dmesg | tail -50 | grep -q "mutex_pkt"; then
+    echo "✓ Packet processing detected"
+else
+    echo "⚠ No packet logs (may be expected if no rewriting active)"
+fi
+
+# Unload and check statistics
+sudo rmmod mutex_proxy
+echo "✓ Module unloaded"
+
+# Display statistics
+echo ""
+echo "=== Statistics ==="
+sudo dmesg | tail -30 | grep -E "(rewrote|rewrites|Checksum)"
+
+echo ""
+echo "=== Test Complete ==="
+```
+
+Run with:
+```bash
+chmod +x src/module/test_packet_rewrite.sh
+sudo src/module/test_packet_rewrite.sh
+```
+
+### Manual Testing Procedures
+
+#### Test 1: Module Load/Unload
+```bash
+cd src/module
+make clean && make
+sudo insmod build/mutex_proxy.ko
+lsmod | grep mutex_proxy  # Verify loaded
+sudo rmmod mutex_proxy     # Verify unloads cleanly
+sudo dmesg | tail -30      # Check for errors
+```
+
+#### Test 2: Debug Logging
+```bash
+sudo insmod build/mutex_proxy.ko
+echo 1 | sudo tee /sys/module/mutex_packet_rewrite/parameters/debug
+ping -c 3 8.8.8.8
+sudo dmesg | grep "mutex_pkt"  # Should see validation logs
+sudo rmmod mutex_proxy
+```
+
+#### Test 3: Statistics Tracking
+```bash
+sudo insmod build/mutex_proxy.ko
+curl http://example.com > /dev/null 2>&1
+sudo rmmod mutex_proxy
+sudo dmesg | tail -20 | grep "rewrote"  # View stats
+```
+
+#### Test 4: Multiple Load/Unload Cycles
+```bash
+for i in {1..5}; do
+    echo "Cycle $i"
+    sudo insmod build/mutex_proxy.ko
+    sleep 1
+    ping -c 2 8.8.8.8 > /dev/null 2>&1 || true
+    sudo rmmod mutex_proxy
+    sleep 1
+done
+sudo dmesg | tail -50  # Check for memory leaks
+```
+
+### Performance Testing
+
+#### Latency Impact
+```bash
+# Baseline (no module)
+ping -c 100 8.8.8.8 | grep avg
+
+# With module
+sudo insmod build/mutex_proxy.ko
+ping -c 100 8.8.8.8 | grep avg
+sudo rmmod mutex_proxy
+
+# Compare results
+```
+
+#### Throughput Testing
+```bash
+# Install iperf3
+sudo apt-get install iperf3
+
+# Test without module
+iperf3 -c <server_ip> -t 30
+
+# Test with module
+sudo insmod build/mutex_proxy.ko
+iperf3 -c <server_ip> -t 30
+sudo rmmod mutex_proxy
+
+# Compare throughput
+```
+
+### Integration Testing
+
+Test interaction between components:
+
+```bash
+# Load with all features enabled
+sudo insmod build/mutex_proxy.ko
+echo 1 | sudo tee /sys/module/mutex_proxy/parameters/debug
+echo 1 | sudo tee /sys/module/mutex_packet_rewrite/parameters/debug
+
+# Generate diverse traffic
+ping -c 5 8.8.8.8 &              # ICMP
+curl http://example.com &         # TCP
+nslookup google.com &             # UDP
+wait
+
+# Check all subsystems
+sudo dmesg | grep -E "(mutex_pkt|connection|netfilter)"
+
+# Unload
+sudo rmmod mutex_proxy
+```
+
+### Packet Capture Verification
+
+```bash
+# Terminal 1: Start capture
+sudo tcpdump -i any -n -w capture.pcap
+
+# Terminal 2: Load module and generate traffic
+sudo insmod build/mutex_proxy.ko
+ping -c 10 8.8.8.8
+sudo rmmod mutex_proxy
+
+# Terminal 1: Stop capture (Ctrl+C)
+
+# Analyze capture
+wireshark capture.pcap
+# or
+tcpdump -r capture.pcap -n -vv | less
+```
+
+---
+
+## Safety and Best Practices
+
+### Before Testing
+
+1. **Save all work** - Module can crash system
+2. **Test in VM first** - VirtualBox, QEMU, or KVM
+3. **Have recovery plan** - Know how to boot recovery mode
+4. **Check dmesg** - Ensure no existing issues
+
+### During Testing
+
+1. **Monitor dmesg:** `sudo dmesg -w` in separate terminal
+2. **Watch resources:** `htop` or `top`
+3. **Limit duration:** Don't run untested code for hours
+4. **Document issues:** Save dmesg output if crashes occur
+
+### If Something Goes Wrong
+
+1. **Try clean unload:** `sudo rmmod mutex_proxy`
+2. **Force unload:** `sudo rmmod -f mutex_proxy`
+3. **Reboot if stuck:** `sudo reboot`
+4. **Boot recovery:** Hold Shift during boot (GRUB)
+5. **Remove auto-load:** Check `/etc/modules` and `/etc/modules-load.d/`
+
+---
+
+## Troubleshooting
+
+### Module Won't Load
+
+**Error:** `insmod: ERROR: could not insert module`
+
+**Solutions:**
+```bash
+# Check kernel version match
+uname -r
+modinfo build/mutex_proxy.ko | grep vermagic
+
+# Rebuild for current kernel
+make clean && make
+
+# Check for symbol conflicts
+sudo dmesg | tail -20
+```
+
+### No Debug Output
+
+**Problem:** Debug enabled but no output
+
+**Solutions:**
+```bash
+# Verify debug enabled
+cat /sys/module/mutex_packet_rewrite/parameters/debug
+
+# Enable all debug
+echo 1 | sudo tee /sys/module/*/parameters/debug
+
+# Check kernel log level
+dmesg -n 8
+
+# Use dmesg follow mode
+sudo dmesg -w
+```
+
+### Module Won't Unload
+
+**Error:** `rmmod: ERROR: Module mutex_proxy is in use`
+
+**Solutions:**
+```bash
+# Check reference count
+lsmod | grep mutex_proxy
+
+# Wait for connections to close
+sleep 5
+sudo rmmod mutex_proxy
+
+# Force unload (last resort)
+sudo rmmod -f mutex_proxy
+```
+
+---
+
 ## See Also
 
 - `docs/SYSCALL_API.md` - API documentation
 - `docs/BRANCH_2_SUMMARY.md` - Implementation details
+- `docs/BRANCH_7_SUMMARY.md` - Packet rewriting details
 - `CONTRIBUTING.md` - Contributing guidelines
+- `README.md` - Project overview
+
+---
+
+**Last Updated:** December 20, 2025  
+**Version:** 0.6.0  
+**Status:** Branch 7 Testing Verified
