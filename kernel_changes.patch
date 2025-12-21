@@ -1,0 +1,287 @@
+diff --git a/kernel/mutex_proxy.c b/kernel/mutex_proxy.c
+index 86b90cd7c..42a9e03d8 100644
+--- a/kernel/mutex_proxy.c
++++ b/kernel/mutex_proxy.c
+@@ -33,17 +33,17 @@ MODULE_PARM_DESC(conn_table_size, "Default connection table size (default: 1024)
+ #define mpx_debug(fmt, ...) \
+ 	do { \
+ 		if (debug_enabled) \
+-			mpx_debug("" fmt, ##__VA_ARGS__); \
++			pr_debug("mutex_proxy: " fmt, ##__VA_ARGS__); \
+ 	} while (0)
+
+ #define mpx_info(fmt, ...) \
+-	mpx_info("" fmt, ##__VA_ARGS__)
++	pr_info("mutex_proxy: " fmt, ##__VA_ARGS__)
+
+ #define mpx_warn(fmt, ...) \
+-	mpx_warn("" fmt, ##__VA_ARGS__)
++	pr_warn("mutex_proxy: " fmt, ##__VA_ARGS__)
+
+ #define mpx_err(fmt, ...) \
+-	mpx_err("" fmt, ##__VA_ARGS__)
++	pr_err("mutex_proxy: " fmt, ##__VA_ARGS__)
+
+ /* Forward declarations */
+ struct mutex_proxy_context;
+@@ -54,16 +54,15 @@ struct mutex_proxy_context;
+  *
+  * Performs comprehensive validation of proxy configuration including:
+  * - Version number (must be 1)
+- * - Proxy type (must be 1-3)
+- * - Port number (must be 1-65535)
+- * - Address validation (at least one byte must be non-zero)
++ * - Number of servers (1-8)
++ * - Selection strategy (valid type)
++ * - Per-server validation (type, port)
+  *
+  * Return: true if configuration is valid, false otherwise
+  */
+ static bool is_valid_proxy_config(const struct mutex_proxy_config *cfg)
+ {
+ 	unsigned int i;
+-	bool addr_set = false;
+
+ 	if (!cfg) {
+ 		mpx_err("NULL config pointer\n");
+@@ -77,31 +76,37 @@ static bool is_valid_proxy_config(const struct mutex_proxy_config *cfg)
+ 		return false;
+ 	}
+
+-	/* Validate proxy type */
+-	if (cfg->proxy_type < 1 || cfg->proxy_type > PROXY_TYPE_MAX) {
+-		mpx_warn("invalid proxy type %u (valid range: 1-%u)\n",
+-			cfg->proxy_type, PROXY_TYPE_MAX);
++	/* Validate at least one server is configured */
++	if (cfg->num_servers == 0 || cfg->num_servers > MUTEX_PROXY_MAX_SERVERS) {
++		mpx_warn("invalid num_servers %u (valid range: 1-%u)\n",
++			cfg->num_servers, MUTEX_PROXY_MAX_SERVERS);
+ 		return false;
+ 	}
+
+-	/* Validate port number (1-65535, 0 is reserved) */
+-	if (cfg->proxy_port == 0 || cfg->proxy_port > 65535) {
+-		mpx_warn("invalid proxy port %u (valid range: 1-65535)\n",
+-			cfg->proxy_port);
++	/* Validate selection strategy */
++	if (cfg->selection_strategy < PROXY_SELECT_ROUND_ROBIN ||
++	    cfg->selection_strategy > PROXY_SELECT_RANDOM) {
++		mpx_warn("invalid selection_strategy %u\n", cfg->selection_strategy);
+ 		return false;
+ 	}
+
+-	/* Check if proxy address is set (at least one byte non-zero) */
+-	for (i = 0; i < ARRAY_SIZE(cfg->proxy_addr); i++) {
+-		if (cfg->proxy_addr[i] != 0) {
+-			addr_set = true;
+-			break;
++	/* Validate each configured server */
++	for (i = 0; i < cfg->num_servers; i++) {
++		const struct mutex_proxy_server *srv = &cfg->servers[i];
++
++		/* Validate proxy type */
++		if (srv->proxy_type == 0 || srv->proxy_type > PROXY_TYPE_MAX) {
++			mpx_warn("invalid proxy type %u for server %u\n",
++				srv->proxy_type, i);
++			return false;
+ 		}
+-	}
+
+-	if (!addr_set) {
+-		mpx_warn("proxy address not set (all zeros)\n");
+-		return false;
++		/* Validate port number */
++		if (srv->proxy_port == 0 || srv->proxy_port > 65535) {
++			mpx_warn("invalid proxy port %u for server %u\n",
++				srv->proxy_port, i);
++			return false;
++		}
+ 	}
+
+ 	return true;
+@@ -149,8 +154,9 @@ struct mutex_proxy_context {
+
+ /* Function prototypes */
+ static struct mutex_proxy_context *mutex_proxy_ctx_alloc(unsigned int flags);
+-static void mutex_proxy_ctx_get(struct mutex_proxy_context *ctx);
+ static void mutex_proxy_ctx_put(struct mutex_proxy_context *ctx);
++bool mutex_proxy_applies_to_current(struct mutex_proxy_context *ctx);
++EXPORT_SYMBOL(mutex_proxy_applies_to_current);
+
+ /**
+  * mutex_proxy_ctx_alloc - Allocate and initialize a new proxy context
+@@ -184,10 +190,18 @@ static struct mutex_proxy_context *mutex_proxy_ctx_alloc(unsigned int flags)
+
+ 	/* Initialize default configuration */
+ 	ctx->config.version = 1;
+-	ctx->config.proxy_type = PROXY_TYPE_SOCKS5;
+-	ctx->config.proxy_port = 1080;
+-	ctx->config.flags = 0;
+-	memset(ctx->config.proxy_addr, 0, sizeof(ctx->config.proxy_addr));
++	ctx->config.num_servers = 1;
++	ctx->config.selection_strategy = PROXY_SELECT_ROUND_ROBIN;
++	ctx->config.current_server = 0;
++
++	/* Initialize first server with defaults */
++	ctx->config.servers[0].proxy_type = PROXY_TYPE_SOCKS5;
++	ctx->config.servers[0].proxy_port = 1080;
++	ctx->config.servers[0].flags = PROXY_CONFIG_ACTIVE;
++	ctx->config.servers[0].priority = 10;
++	memset(ctx->config.servers[0].proxy_addr, 0, sizeof(ctx->config.servers[0].proxy_addr));
++	memset(ctx->config.servers[0].username, 0, sizeof(ctx->config.servers[0].username));
++	memset(ctx->config.servers[0].password, 0, sizeof(ctx->config.servers[0].password));
+ 	memset(ctx->config.reserved, 0, sizeof(ctx->config.reserved));
+
+ 	/* Initialize statistics */
+@@ -232,15 +246,6 @@ static struct mutex_proxy_context *mutex_proxy_ctx_alloc(unsigned int flags)
+ 	return ctx;
+ }
+
+-/**
+- * mutex_proxy_ctx_get - Increment reference count
+- * @ctx: Context to reference
+- */
+-static void mutex_proxy_ctx_get(struct mutex_proxy_context *ctx)
+-{
+-	atomic_inc(&ctx->refcount);
+-}
+-
+ /**
+  * mutex_proxy_ctx_destroy_rcu - RCU callback to destroy context
+  * @rcu: RCU head
+@@ -364,8 +369,9 @@ static ssize_t mutex_proxy_write(struct file *file, const char __user *buf,
+ 				  size_t count, loff_t *ppos)
+ {
+ 	struct mutex_proxy_context *ctx = file->private_data;
+-	struct mutex_proxy_config new_config;
++	struct mutex_proxy_config *new_config;
+ 	unsigned long flags;
++	ssize_t ret;
+
+ 	/* Validate file pointer */
+ 	if (unlikely(!file)) {
+@@ -392,26 +398,38 @@ static ssize_t mutex_proxy_write(struct file *file, const char __user *buf,
+ 		return -EINVAL;
+ 	}
+
++	/* Allocate config structure dynamically to avoid large stack frame */
++	new_config = kmalloc(sizeof(*new_config), GFP_KERNEL);
++	if (!new_config)
++		return -ENOMEM;
++
+ 	/* Copy config from userspace */
+-	if (copy_from_user(&new_config, buf, sizeof(new_config)))
+-		return -EFAULT;
++	if (copy_from_user(new_config, buf, sizeof(*new_config))) {
++		ret = -EFAULT;
++		goto out_free;
++	}
+
+ 	/* Validate configuration using helper */
+-	if (!is_valid_proxy_config(&new_config)) {
++	if (!is_valid_proxy_config(new_config)) {
+ 		mpx_warn("configuration validation failed for PID %d\n",
+ 			current->pid);
+-		return -EINVAL;
++		ret = -EINVAL;
++		goto out_free;
+ 	}
+
+ 	/* Update configuration atomically */
+ 	spin_lock_irqsave(&ctx->lock, flags);
+-	memcpy(&ctx->config, &new_config, sizeof(ctx->config));
++	memcpy(&ctx->config, new_config, sizeof(ctx->config));
+ 	spin_unlock_irqrestore(&ctx->lock, flags);
+
+-	mpx_debug("updated config for PID %d (type=%u, port=%u)\n",
+-		 ctx->owner_pid, new_config.proxy_type, new_config.proxy_port);
++	mpx_debug("updated config for PID %d (servers=%u, strategy=%u)\n",
++		 ctx->owner_pid, new_config->num_servers, new_config->selection_strategy);
++
++	ret = count;
+
+-	return count;
++out_free:
++	kfree(new_config);
++	return ret;
+ }
+
+ /**
+@@ -426,10 +444,11 @@ static long mutex_proxy_ioctl(struct file *file, unsigned int cmd,
+ 			       unsigned long arg)
+ {
+ 	struct mutex_proxy_context *ctx = file->private_data;
+-	struct mutex_proxy_config config_copy;
++	struct mutex_proxy_config *config_copy;
+ 	struct mutex_proxy_stats stats_copy;
+ 	unsigned long flags;
+ 	void __user *argp = (void __user *)arg;
++	int ret = 0;
+
+ 	if (!ctx)
+ 		return -EINVAL;
+@@ -456,21 +475,30 @@ static long mutex_proxy_ioctl(struct file *file, unsigned int cmd,
+ 			return -EINVAL;
+ 		}
+
+-		if (copy_from_user(&config_copy, argp, sizeof(config_copy)))
++		/* Allocate config structure dynamically */
++		config_copy = kmalloc(sizeof(*config_copy), GFP_KERNEL);
++		if (!config_copy)
++			return -ENOMEM;
++
++		if (copy_from_user(config_copy, argp, sizeof(*config_copy))) {
++			kfree(config_copy);
+ 			return -EFAULT;
++		}
+
+ 		/* Validate configuration using helper */
+-		if (!is_valid_proxy_config(&config_copy)) {
++		if (!is_valid_proxy_config(config_copy)) {
+ 			mpx_warn("SET_CONFIG validation failed for PID %d\n",
+ 				current->pid);
++			kfree(config_copy);
+ 			return -EINVAL;
+ 		}
+
+ 		/* Update atomically */
+ 		spin_lock_irqsave(&ctx->lock, flags);
+-		memcpy(&ctx->config, &config_copy, sizeof(ctx->config));
++		memcpy(&ctx->config, config_copy, sizeof(ctx->config));
+ 		spin_unlock_irqrestore(&ctx->lock, flags);
+
++		kfree(config_copy);
+ 		mpx_debug("set config for PID %d via ioctl\n",
+ 			 ctx->owner_pid);
+ 		return 0;
+@@ -482,16 +510,24 @@ static long mutex_proxy_ioctl(struct file *file, unsigned int cmd,
+ 			return -EINVAL;
+ 		}
+
++		/* Allocate config structure dynamically */
++		config_copy = kmalloc(sizeof(*config_copy), GFP_KERNEL);
++		if (!config_copy)
++			return -ENOMEM;
++
+ 		spin_lock_irqsave(&ctx->lock, flags);
+-		memcpy(&config_copy, &ctx->config, sizeof(config_copy));
++		memcpy(config_copy, &ctx->config, sizeof(*config_copy));
+ 		spin_unlock_irqrestore(&ctx->lock, flags);
+
+-		if (copy_to_user(argp, &config_copy, sizeof(config_copy)))
+-			return -EFAULT;
++		if (copy_to_user(argp, config_copy, sizeof(*config_copy)))
++			ret = -EFAULT;
+
+-		mpx_debug("get config for PID %d via ioctl\n",
+-			 ctx->owner_pid);
+-		return 0;
++		kfree(config_copy);
++
++		if (ret == 0)
++			mpx_debug("get config for PID %d via ioctl\n",
++				 ctx->owner_pid);
++		return ret;
+
+ 	case MUTEX_PROXY_IOC_GET_STATS:
+ 		/* Get current statistics */
