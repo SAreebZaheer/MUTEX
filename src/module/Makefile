@@ -5,7 +5,7 @@
 ifneq ($(KERNELRELEASE),)
 # Kbuild part - called from kernel build system
 obj-m += mutex_proxy.o
-mutex_proxy-objs := mutex_proxy_core.o mutex_conn_track.o mutex_packet_rewrite.o mutex_process_filter.o mutex_protocol_detect.o mutex_perf_opt.o mutex_security.o mutex_ipv6.o mutex_routing.o
+mutex_proxy-objs := mutex_proxy_core.o mutex_conn_track.o mutex_packet_rewrite.o mutex_process_filter.o mutex_protocol_detect.o mutex_perf_opt.o mutex_security.o mutex_ipv6.o mutex_routing.o mutex_dns.o
 ccflags-y := -Wall -Wextra
 
 else
@@ -34,7 +34,7 @@ all:
 	@cp -f *.h $(BUILD_DIR)/ 2>/dev/null || true
 	@# Create Kbuild in build directory
 	@echo 'obj-m += mutex_proxy.o' > $(BUILD_DIR)/Kbuild
-		@echo 'mutex_proxy-objs := mutex_proxy_core.o mutex_conn_track.o mutex_packet_rewrite.o mutex_process_filter.o mutex_protocol_detect.o mutex_perf_opt.o mutex_security.o mutex_ipv6.o mutex_routing.o' >> $(BUILD_DIR)/Kbuild
+		@echo 'mutex_proxy-objs := mutex_proxy_core.o mutex_conn_track.o mutex_packet_rewrite.o mutex_process_filter.o mutex_protocol_detect.o mutex_perf_opt.o mutex_security.o mutex_ipv6.o mutex_routing.o mutex_dns.o' >> $(BUILD_DIR)/Kbuild
 	@echo 'ccflags-y := -Wall -Wextra' >> $(BUILD_DIR)/Kbuild
 	@# Build in the build directory
 	$(MAKE) -C $(KDIR) M=$(BUILD_DIR) src=$(BUILD_DIR) modules
