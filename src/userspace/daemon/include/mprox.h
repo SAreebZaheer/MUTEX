@@ -10,10 +10,12 @@
 
 #include <stdint.h>
 #include <sys/ioctl.h>
+#include <unistd.h>
+#include <sys/syscall.h>
 
 /* Syscall number - will be assigned when kernel is built */
 #ifndef __NR_mprox_create
-#define __NR_mprox_create 451  /* Placeholder, update with actual number */
+#define __NR_mprox_create 471  /* Match arch/x86/entry/syscalls/syscall_64.tbl */
 #endif
 
 /* Flags for mprox_create() */

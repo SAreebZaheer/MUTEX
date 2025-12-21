@@ -81,20 +81,23 @@ int main(void)
 
 	/* Check fd1 */
 	if (mprox_get_config(fd1, &config) == 0) {
-		printf("  fd1: type=%u, port=%u\n",
-		       config.proxy_type, config.proxy_port);
+		printf("  fd1: type=%u, port=%u, servers=%u\n",
+		       config.servers[0].proxy_type, config.servers[0].proxy_port,
+		       config.num_servers);
 	}
 
 	/* Check fd2 */
 	if (mprox_get_config(fd2, &config) == 0) {
-		printf("  fd2: type=%u, port=%u\n",
-		       config.proxy_type, config.proxy_port);
+		printf("  fd2: type=%u, port=%u, servers=%u\n",
+		       config.servers[0].proxy_type, config.servers[0].proxy_port,
+		       config.num_servers);
 	}
 
 	/* Check fd3 */
 	if (mprox_get_config(fd3, &config) == 0) {
-		printf("  fd3: type=%u, port=%u\n",
-		       config.proxy_type, config.proxy_port);
+		printf("  fd3: type=%u, port=%u, servers=%u\n",
+		       config.servers[0].proxy_type, config.servers[0].proxy_port,
+		       config.num_servers);
 	}
 
 	printf("\n");
@@ -129,7 +132,7 @@ int main(void)
 	printf("Verifying fd1 still works...\n");
 	if (mprox_get_config(fd1, &config) == 0) {
 		printf("  fd1 still configured: type=%u, port=%u\n",
-		       config.proxy_type, config.proxy_port);
+		       config.servers[0].proxy_type, config.servers[0].proxy_port);
 	}
 
 	printf("\n");
