@@ -325,7 +325,6 @@ int process_filter_get_cgroup_path(struct task_struct *task, char *buf,
 				   size_t buflen)
 {
 	struct cgroup *cgrp;
-	char *path;
 	int ret = 0;
 
 	if (!task || !buf || buflen == 0)
@@ -336,8 +335,8 @@ int process_filter_get_cgroup_path(struct task_struct *task, char *buf,
 	cgrp = task_cgroup(task, 0);  /* Get from first hierarchy */
 	if (cgrp) {
 		/* Use cgroup_path with buffer (kernel 6.8+ API) */
-		char *result = cgroup_path(cgrp, buf, buflen);
-		if (!result) {
+		ret = cgroup_path(cgrp, buf, buflen);
+		if (ret < 0) {
 			strncpy(buf, "/", buflen);
 			ret = -ENOMEM;
 		}
@@ -921,8 +920,8 @@ bool process_filter_should_proxy(struct process_filter_context *ctx,
 		if (sk && sk->sk_socket && sk->sk_socket->file) {
 			/* Try to get PID from socket file */
 			struct file *file = sk->sk_socket->file;
-			if (file->f_owner.pid)
-				pid = pid_vnr(file->f_owner.pid);
+			if (file->f_owner && file->f_owner->pid)
+				pid = pid_vnr(file->f_owner->pid);
 			else
 				pid = task_pid_nr(current);
 		} else {

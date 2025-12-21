@@ -108,12 +108,18 @@ int mprox_set_config(int fd, const struct mutex_proxy_config *config)
 	}
 
 	/* Validate configuration */
-	if (config->proxy_type < 1 || config->proxy_type > PROXY_TYPE_MAX) {
+	if (config->num_servers == 0 || config->num_servers > MUTEX_PROXY_MAX_SERVERS) {
 		errno = EINVAL;
 		return -1;
 	}
 
-	if (config->proxy_port == 0 || config->proxy_port > 65535) {
+	/* Validate at least one server */
+	if (config->servers[0].proxy_type < 1 || config->servers[0].proxy_type > PROXY_TYPE_MAX) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	if (config->servers[0].proxy_port == 0 || config->servers[0].proxy_port > 65535) {
 		errno = EINVAL;
 		return -1;
 	}
@@ -184,15 +190,22 @@ int mprox_set_socks5(int fd, const char *addr, uint16_t port)
 	}
 
 	config.version = 1;
-	config.proxy_type = PROXY_TYPE_SOCKS5;
-	config.proxy_port = port;
+	config.num_servers = 1;
+	config.selection_strategy = PROXY_SELECT_ROUND_ROBIN;
+	config.current_server = 0;
+
+	config.servers[0].proxy_type = PROXY_TYPE_SOCKS5;
+	config.servers[0].proxy_port = port;
+	config.servers[0].flags = PROXY_CONFIG_ACTIVE;
+	config.servers[0].priority = 1;
 
 	/* Try to parse as IPv4 first */
 	if (inet_pton(AF_INET, addr, &ipv4) == 1) {
-		memcpy(config.proxy_addr, &ipv4, 4);
+		memcpy(config.servers[0].proxy_addr, &ipv4, 4);
 	} else if (inet_pton(AF_INET6, addr, &ipv6) == 1) {
 		/* Parse as IPv6 */
-		memcpy(config.proxy_addr, &ipv6, 16);
+		config.servers[0].flags |= PROXY_CONFIG_IPV6;
+		memcpy(config.servers[0].proxy_addr, &ipv6, 16);
 	} else {
 		errno = EINVAL;
 		return -1;
@@ -216,15 +229,22 @@ int mprox_set_http(int fd, const char *addr, uint16_t port, int use_https)
 	}
 
 	config.version = 1;
-	config.proxy_type = use_https ? PROXY_TYPE_HTTPS : PROXY_TYPE_HTTP;
-	config.proxy_port = port;
+	config.num_servers = 1;
+	config.selection_strategy = PROXY_SELECT_ROUND_ROBIN;
+	config.current_server = 0;
+
+	config.servers[0].proxy_type = use_https ? PROXY_TYPE_HTTPS : PROXY_TYPE_HTTP;
+	config.servers[0].proxy_port = port;
+	config.servers[0].flags = PROXY_CONFIG_ACTIVE;
+	config.servers[0].priority = 1;
 
 	/* Try to parse as IPv4 first */
 	if (inet_pton(AF_INET, addr, &ipv4) == 1) {
-		memcpy(config.proxy_addr, &ipv4, 4);
+		memcpy(config.servers[0].proxy_addr, &ipv4, 4);
 	} else if (inet_pton(AF_INET6, addr, &ipv6) == 1) {
 		/* Parse as IPv6 */
-		memcpy(config.proxy_addr, &ipv6, 16);
+		config.servers[0].flags |= PROXY_CONFIG_IPV6;
+		memcpy(config.servers[0].proxy_addr, &ipv6, 16);
 	} else {
 		errno = EINVAL;
 		return -1;
@@ -284,7 +304,7 @@ int mprox_is_enabled(int fd)
 	}
 
 	/* Check if config has been set */
-	if (config.proxy_type == 0) {
+	if (config.num_servers == 0 || config.servers[0].proxy_type == 0) {
 		return 0;
 	}
 

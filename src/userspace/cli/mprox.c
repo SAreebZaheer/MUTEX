@@ -125,18 +125,39 @@ static const char *proxy_type_str(int type)
 static void print_config(const struct mutex_proxy_config *config)
 {
 	char addr_str[INET6_ADDRSTRLEN];
+	unsigned int i;
 
 	printf("Proxy Configuration:\n");
-	printf("  Type:    %s\n", proxy_type_str(config->proxy_type));
-	printf("  Port:    %u\n", config->proxy_port);
+	printf("  Version:  %u\n", config->version);
+	printf("  Servers:  %u\n", config->num_servers);
+	printf("  Strategy: %u\n", config->selection_strategy);
+	printf("  Current:  %u\n", config->current_server);
 
-	/* Try to format address as IPv4 first */
-	if (inet_ntop(AF_INET, config->proxy_addr, addr_str, sizeof(addr_str))) {
-		printf("  Address: %s (IPv4)\n", addr_str);
-	} else if (inet_ntop(AF_INET6, config->proxy_addr, addr_str, sizeof(addr_str))) {
-		printf("  Address: %s (IPv6)\n", addr_str);
-	} else {
-		printf("  Address: <invalid>\n");
+	for (i = 0; i < config->num_servers && i < MUTEX_PROXY_MAX_SERVERS; i++) {
+		const struct mutex_proxy_server *srv = &config->servers[i];
+		printf("\n  Server %u:\n", i);
+		printf("    Type:     %s\n", proxy_type_str(srv->proxy_type));
+		printf("    Port:     %u\n", srv->proxy_port);
+		printf("    Priority: %u\n", srv->priority);
+		printf("    Flags:    0x%x%s%s%s\n", srv->flags,
+		       (srv->flags & PROXY_CONFIG_ACTIVE) ? " ACTIVE" : "",
+		       (srv->flags & PROXY_CONFIG_IPV6) ? " IPV6" : "",
+		       (srv->flags & PROXY_CONFIG_AUTH) ? " AUTH" : "");
+
+		/* Try to format address */
+		if (srv->flags & PROXY_CONFIG_IPV6) {
+			if (inet_ntop(AF_INET6, srv->proxy_addr, addr_str, sizeof(addr_str))) {
+				printf("    Address:  %s (IPv6)\n", addr_str);
+			} else {
+				printf("    Address:  <invalid>\n");
+			}
+		} else {
+			if (inet_ntop(AF_INET, srv->proxy_addr, addr_str, sizeof(addr_str))) {
+				printf("    Address:  %s (IPv4)\n", addr_str);
+			} else {
+				printf("    Address:  <invalid>\n");
+			}
+		}
 	}
 }
 
@@ -268,7 +289,7 @@ static int cmd_status(void)
 	}
 
 	printf("Proxy Status (fd %d):\n", opts.fd);
-	if (config.proxy_type == 0) {
+	if (config.num_servers == 0 || config.servers[0].proxy_type == 0) {
 		printf("  Status: Not configured\n");
 	} else {
 		printf("  Status: Configured\n");

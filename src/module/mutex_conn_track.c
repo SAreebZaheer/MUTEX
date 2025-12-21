@@ -101,7 +101,7 @@ void mutex_conn_track_exit(void)
 		return;
 
 	/* Stop garbage collection timer */
-	del_timer_sync(&global_conn_table->gc_timer);
+	timer_delete_sync(&global_conn_table->gc_timer);
 
 	pr_info("mutex_conn_track: cleaning up %d connections\n",
 		atomic_read(&global_conn_table->count));
@@ -116,7 +116,7 @@ void mutex_conn_track_exit(void)
 					   &global_conn_table->buckets[i],
 					   hash_node) {
 			hlist_del_init(&entry->hash_node);
-			del_timer_sync(&entry->timer);
+			timer_delete_sync(&entry->timer);
 			mutex_conn_put(entry);
 		}
 		spin_unlock_bh(&global_conn_table->locks[i]);
@@ -151,7 +151,6 @@ struct mutex_conn_entry *mutex_conn_create(const struct conn_tuple *tuple,
 {
 	struct mutex_conn_entry *conn;
 	u32 hash;
-	unsigned int timeout_sec;
 	unsigned int cpu = smp_processor_id();
 
 	if (!global_conn_table || !tuple || !ctx) {
@@ -210,6 +209,9 @@ struct mutex_conn_entry *mutex_conn_create(const struct conn_tuple *tuple,
 	/* Initialize locks and reference counting */
 	spin_lock_init(&conn->lock);
 	atomic_set(&conn->refcount, 1);
+
+	/* Initialize timeout timer */
+	timer_setup(&conn->timer, conn_timeout_handler, 0);
 
 	/* Set owning context */
 	conn->ctx = ctx;
@@ -389,7 +391,7 @@ void mutex_conn_put(struct mutex_conn_entry *conn)
 
 	if (atomic_dec_and_test(&conn->refcount)) {
 		/* Last reference - free the connection */
-		del_timer_sync(&conn->timer);
+		timer_delete_sync(&conn->timer);
 
 		/* Use performance-optimized free (Branch 13) */
 		mutex_perf_conn_free(conn);
@@ -430,7 +432,7 @@ void mutex_conn_delete(struct mutex_conn_entry *conn)
 	atomic_dec(&global_conn_table->count);
 
 	/* Cancel timeout timer */
-	del_timer_sync(&conn->timer);
+	timer_delete_sync(&conn->timer);
 
 	pr_debug("mutex_conn_track: deleted connection\n");
 
@@ -577,7 +579,7 @@ static void conn_timeout_handler(struct timer_list *t)
 {
 	struct mutex_conn_entry *conn;
 
-	conn = from_timer(conn, t, timer);
+	conn = timer_container_of(conn, t, timer);
 	if (!conn)
 		return;
 

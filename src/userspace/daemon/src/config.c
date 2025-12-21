@@ -477,7 +477,7 @@ void config_free(struct mutex_config *config)
     free(config->proxy.auth.password);
 
     /* Free fallback servers */
-    struct fallback_server *curr = config->fallback_servers;
+    struct fallback_server *curr = config->proxy.fallback_servers;
     while (curr) {
         struct fallback_server *next = curr->next;
         free(curr->server);
