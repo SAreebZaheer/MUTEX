@@ -36,7 +36,6 @@
 #define IPV6_ADDR_LOOPBACK		0x0002	/* ::1 */
 #define IPV6_ADDR_MULTICAST		0x0004	/* ffxx::/8 */
 #define IPV6_ADDR_LINKLOCAL		0x0008	/* fe80::/10 */
-#define IPV6_ADDR_SITELOCAL		0x0010	/* fec0::/10 (deprecated) */
 #define IPV6_ADDR_UNIQUELOCAL		0x0020	/* fc00::/7 */
 #define IPV6_ADDR_GLOBAL		0x0040	/* Global unicast */
 #define IPV6_ADDR_V4MAPPED		0x0080	/* ::ffff:0:0/96 */

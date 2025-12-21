@@ -929,8 +929,8 @@ void ipv6_dump_header(struct sk_buff *skb)
 
 	pr_info("IPv6 Header:\n");
 	pr_info("  Version: %u\n", ipv6h->version);
-	pr_info("  Traffic Class: 0x%02x\n", ipv6_get_dsfield(ipv6h));
-	pr_info("  Flow Label: 0x%05x\n", ntohl(ipv6_flowlabel(ipv6h)));
+	pr_info("  Traffic Class: 0x%02x\n", (ipv6h->priority << 4) | ((ipv6h->flow_lbl[0] >> 4) & 0x0F));
+	pr_info("  Flow Label: 0x%05x\n", ((ipv6h->flow_lbl[0] & 0x0F) << 16) | (ipv6h->flow_lbl[1] << 8) | ipv6h->flow_lbl[2]);
 	pr_info("  Payload Length: %u\n", ntohs(ipv6h->payload_len));
 	pr_info("  Next Header: %u\n", ipv6h->nexthdr);
 	pr_info("  Hop Limit: %u\n", ipv6h->hop_limit);
