@@ -200,6 +200,30 @@ MUTEX is a loadable kernel module (LKM) that creates a kernel-level proxy servic
 - Geographic routing infrastructure (GeoIP ready)
 - Comprehensive test suite (12/12 tests passing)
 
+✅ **Branch 17 Complete:** `feature/dns-handling`
+- DNS request interception and proxying
+- Per-fd DNS caching with O(1) hash table lookup
+- Support for DNS over proxy (SOCKS DNS)
+- DNS leak prevention with bypass rules
+- Custom DNS server configuration per fd
+- DNS response validation and TTL handling
+- Domain pattern matching with wildcards
+- DNS query logging with statistics
+- LRU-based cache eviction
+- Comprehensive test suite (12/12 tests passing)
+
+✅ **Branch 18 Complete:** `feature/statistics-monitoring`
+- Per-connection statistics (bytes, packets, latency, errors)
+- Per-fd aggregate statistics with bandwidth tracking
+- Global system-wide statistics
+- Alert system with configurable thresholds
+- Statistics export (JSON, binary, CSV formats)
+- Procfs interface (/proc/mutex/stats)
+- Thread-safe atomic operations
+- Multi-fd statistics aggregation
+- Real-time monitoring support
+- Performance metrics and anomaly detection
+
 ✅ **Branch 20 Complete:** `feature/configuration-file`
 - JSON-based configuration file format
 - Userspace daemon for configuration management
