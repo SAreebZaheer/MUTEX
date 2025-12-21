@@ -39,6 +39,7 @@
 #include "mutex_packet_rewrite.h"
 #include "mutex_perf_opt.h"
 #include "mutex_security.h"
+#include "mutex_testing.h"
 
 /* Forward declaration of file_operations - will be implemented incrementally */
 static const struct file_operations mutex_proxy_fops;
@@ -1257,10 +1258,20 @@ static int __init mutex_proxy_init(void)
 	}
 	pr_info("mutex_proxy: performance optimization initialized\n");
 
+	/* Initialize testing framework (Branch 22) */
+	ret = mutex_testing_module_init();
+	if (ret) {
+		pr_warn("mutex_proxy: testing framework init failed: %d (non-fatal)\n", ret);
+		/* Don't fail module load if testing fails */
+	} else {
+		pr_info("mutex_proxy: testing framework initialized\n");
+	}
+
 	/* Register netfilter hooks */
 	ret = nf_register_net_hooks(&init_net, nf_hooks, ARRAY_SIZE(nf_hooks));
 	if (ret) {
 		pr_err("mutex_proxy: failed to register netfilter hooks: %d\n", ret);
+		mutex_testing_module_exit();
 		mutex_perf_exit();
 		mutex_security_exit();
 		mutex_packet_rewrite_exit();
@@ -1288,6 +1299,10 @@ static void __exit mutex_proxy_exit(void)
 	/* Unregister netfilter hooks */
 	nf_unregister_net_hooks(&init_net, nf_hooks, ARRAY_SIZE(nf_hooks));
 	pr_info("mutex_proxy: unregistered netfilter hooks\n");
+
+	/* Cleanup testing framework (Branch 22) */
+	mutex_testing_module_exit();
+	pr_info("mutex_proxy: testing framework cleaned up\n");
 
 	/* Cleanup performance optimization (Branch 13) */
 	mutex_perf_exit();
