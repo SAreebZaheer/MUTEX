@@ -178,6 +178,28 @@ MUTEX is a loadable kernel module (LKM) that creates a kernel-level proxy servic
 - Statistics tracking for security monitoring
 - LSM integration helpers for future SELinux/AppArmor support
 
+✅ **Branch 15 Complete:** `feature/ipv6-support`
+- Complete IPv6 protocol implementation
+- Extension header parsing (8 types: Hop-by-Hop, Routing, Fragment, etc.)
+- IPv6 checksum calculations (TCP, UDP, ICMPv6)
+- IPv6 address manipulation and translation
+- Dual-stack IPv4/IPv6 support
+- IPv4-mapped IPv6 address handling
+- Integration with connection tracking and packet rewriting
+- ICMPv6 protocol support
+- Comprehensive test suite (12/12 tests passing)
+
+✅ **Branch 16 Complete:** `feature/advanced-routing`
+- Multiple routing tables with red-black tree storage
+- Policy-based routing with 10 match criteria
+- 6 load balancing algorithms (round-robin, least-conn, weighted, random, hash, least-latency)
+- High-performance routing cache (4096 buckets, O(1) lookup)
+- Failover support with passive and active strategies
+- IPv4/IPv6 dual-stack routing
+- Per-server and per-group statistics tracking
+- Geographic routing infrastructure (GeoIP ready)
+- Comprehensive test suite (12/12 tests passing)
+
 ✅ **Branch 20 Complete:** `feature/configuration-file`
 - JSON-based configuration file format
 - Userspace daemon for configuration management
@@ -253,6 +275,8 @@ MUTEX/
 │   ├── BRANCH_12_SUMMARY.md # Branch 12 completion summary
 │   ├── BRANCH_13_SUMMARY.md # Branch 13 completion summary
 │   ├── BRANCH_14_SUMMARY.md # Branch 14 completion summary
+│   ├── BRANCH_15_COMPLETE.md # Branch 15 completion summary
+│   ├── BRANCH_16_COMPLETE.md # Branch 16 completion summary
 │   ├── BRANCH_20_SUMMARY.md # Branch 20 completion summary
 │   ├── NETFILTER_HOOKS.md # Netfilter integration documentation
 │   ├── PDM-sequence.md    # Project scheduling
@@ -281,6 +305,10 @@ MUTEX/
 │   │   ├── mutex_perf_opt.h        # Performance optimizations header
 │   │   ├── mutex_security.c        # Security hardening
 │   │   ├── mutex_security.h        # Security hardening header
+│   │   ├── mutex_ipv6.c            # IPv6 support
+│   │   ├── mutex_ipv6.h            # IPv6 support header
+│   │   ├── mutex_routing.c         # Advanced routing and load balancing
+│   │   ├── mutex_routing.h         # Advanced routing header
 │   │   ├── Makefile                # Build configuration
 │   │   └── test_module.sh          # Automated testing
 │   ├── userspace/         # Userspace components
@@ -364,15 +392,20 @@ MUTEX/
 - ✅ **Protocol-specific routing rules**
 - ✅ **SNI and HTTP Host header extraction**
 - ✅ **Connection state caching for performance**
+- ✅ **Complete IPv6 protocol support with extension headers**
+- ✅ **IPv6 checksum calculations and address manipulation**
+- ✅ **Dual-stack IPv4/IPv6 support**
+- ✅ **Advanced routing with multiple tables and policy-based routing**
+- ✅ **6 load balancing algorithms with failover support**
+- ✅ **High-performance routing cache**
+- ✅ **Per-server statistics and latency tracking**
 
 ### In Development
 - 🚧 DNS handling and leak prevention
 - 🚧 Performance optimization with per-CPU structures
 
 ### Planned (See [BRANCH_PLAN.md](docs/BRANCH_PLAN.md))
-- Advanced routing and load balancing
-- Security hardening and audit logging
-- Complete IPv6 support
+- User authentication and authorization
 - Testing framework and benchmarks
 - And much more...
 
@@ -459,6 +492,8 @@ GPL (GNU General Public License)
 - **Milestone 4:** Production Ready (Week 23) - IN PROGRESS
   - Branch 13: Performance optimization ✅
   - Branch 14: Security hardening ✅
+  - Branch 15: IPv6 support ✅
+  - Branch 16: Advanced routing ✅
   - Branch 17: DNS handling 🚧
 - **Milestone 5:** Release Candidate (Week 28)
 - **Milestone 6:** Version 1.0 (Week 31)
@@ -470,5 +505,5 @@ For questions or issues, please open an issue on the project repository or conta
 ---
 
 **Last Updated:** December 21, 2025
-**Version:** 0.10.0
+**Version:** 0.12.0
 **Status:** In Development - Milestone 4 (Production Ready)
