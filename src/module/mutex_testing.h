@@ -339,4 +339,10 @@ void test_sleep_ms(unsigned int ms);
 unsigned long test_get_random(unsigned long max);
 void test_generate_random_data(void *buffer, size_t size);
 
+/*
+ * Module lifecycle functions
+ */
+int mutex_testing_module_init(void);
+void mutex_testing_module_exit(void);
+
 #endif /* MUTEX_TESTING_H */
