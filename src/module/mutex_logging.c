@@ -15,7 +15,6 @@
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
 #include <linux/uaccess.h>
-#include <stdarg.h>
 
 #include "mutex_logging.h"
 

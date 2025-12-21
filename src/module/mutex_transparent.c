@@ -146,7 +146,7 @@ void transparent_context_free(struct transparent_context *ctx)
 			socks_connection_free(ctx->proxy.socks);
 	} else if (ctx->active_protocol == PROXY_PROTOCOL_HTTP) {
 		if (ctx->proxy.http)
-			http_connection_free(ctx->proxy.http);
+			http_proxy_connection_free(ctx->proxy.http);
 	}
 
 	kfree(ctx);
@@ -421,7 +421,7 @@ enum addr_class transparent_classify_ipv6(struct transparent_context *ctx,
 		return ADDR_CLASS_LOCAL;
 
 	/* Link-local (fe80::/10) */
-	if (ipv6_addr_is_linklocal(addr))
+	if (ipv6_addr_type(addr) & IPV6_ADDR_LINKLOCAL)
 		return ADDR_CLASS_LINK_LOCAL;
 
 	/* Multicast (ff00::/8) */
@@ -699,7 +699,7 @@ int transparent_establish_proxy_connection(struct transparent_context *ctx,
 	case PROXY_PROTOCOL_SOCKS4:
 		/* Allocate SOCKS4 connection if not exists */
 		if (!ctx->proxy.socks) {
-			ctx->proxy.socks = socks_connection_alloc();
+			ctx->proxy.socks = socks_connection_alloc(SOCKS_VERSION_4);
 			if (!ctx->proxy.socks)
 				return -ENOMEM;
 		}
@@ -711,7 +711,7 @@ int transparent_establish_proxy_connection(struct transparent_context *ctx,
 	case PROXY_PROTOCOL_SOCKS5:
 		/* Allocate SOCKS5 connection if not exists */
 		if (!ctx->proxy.socks) {
-			ctx->proxy.socks = socks_connection_alloc();
+			ctx->proxy.socks = socks_connection_alloc(SOCKS_VERSION_5);
 			if (!ctx->proxy.socks)
 				return -ENOMEM;
 		}
@@ -723,7 +723,7 @@ int transparent_establish_proxy_connection(struct transparent_context *ctx,
 	case PROXY_PROTOCOL_HTTP:
 		/* Allocate HTTP connection if not exists */
 		if (!ctx->proxy.http) {
-			ctx->proxy.http = http_connection_alloc();
+			ctx->proxy.http = http_proxy_connection_alloc();
 			if (!ctx->proxy.http)
 				return -ENOMEM;
 		}
@@ -1012,6 +1012,57 @@ void transparent_nat_cleanup(struct transparent_context *ctx)
 }
 
 /* ========== Packet Rewriting ========== */
+
+/* Helper wrappers for packet rewrite API */
+static inline int rewrite_ip_dest(struct sk_buff *skb, __be32 new_daddr)
+{
+	struct rewrite_params_v4 params = {
+		.flags = REWRITE_FLAG_DST_ADDR | REWRITE_FLAG_UPDATE_CSUM,
+		.new_daddr = new_daddr
+	};
+	return mutex_pkt_rewrite_ipv4(skb, &params);
+}
+
+static inline int rewrite_ip_source(struct sk_buff *skb, __be32 new_saddr)
+{
+	struct rewrite_params_v4 params = {
+		.flags = REWRITE_FLAG_SRC_ADDR | REWRITE_FLAG_UPDATE_CSUM,
+		.new_saddr = new_saddr
+	};
+	return mutex_pkt_rewrite_ipv4(skb, &params);
+}
+
+static inline int rewrite_tcp_dest(struct sk_buff *skb, __be16 new_dport)
+{
+	struct packet_info info;
+	if (!mutex_pkt_validate(skb, &info))
+		return -EINVAL;
+	return mutex_pkt_rewrite_tcp_port(skb, &info, 0, new_dport);
+}
+
+static inline int rewrite_tcp_source(struct sk_buff *skb, __be16 new_sport)
+{
+	struct packet_info info;
+	if (!mutex_pkt_validate(skb, &info))
+		return -EINVAL;
+	return mutex_pkt_rewrite_tcp_port(skb, &info, new_sport, 0);
+}
+
+static inline int rewrite_udp_dest(struct sk_buff *skb, __be16 new_dport)
+{
+	struct packet_info info;
+	if (!mutex_pkt_validate(skb, &info))
+		return -EINVAL;
+	return mutex_pkt_rewrite_udp_port(skb, &info, 0, new_dport);
+}
+
+static inline int rewrite_udp_source(struct sk_buff *skb, __be16 new_sport)
+{
+	struct packet_info info;
+	if (!mutex_pkt_validate(skb, &info))
+		return -EINVAL;
+	return mutex_pkt_rewrite_udp_port(skb, &info, new_sport, 0);
+}
 
 int transparent_rewrite_outbound(struct transparent_context *ctx,
 				 struct sk_buff *skb,
