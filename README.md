@@ -246,6 +246,20 @@ MUTEX is a loadable kernel module (LKM) that creates a kernel-level proxy servic
 - Default configuration templates
 - Configuration backup and restore
 
+✅ **Branch 21 Complete:** `feature/logging-framework`
+- Structured logging with 5 log levels (DEBUG, INFO, WARN, ERROR, CRITICAL)
+- 10 log categories (General, Network, Connection, Proxy, Security, etc.)
+- Rate-limited logging with token bucket algorithm
+- Context-aware logging with per-connection tracking
+- Circular buffer for log storage (configurable size)
+- Multiple destinations (printk, buffer, syslog-ready)
+- Log filtering by level and categories
+- Procfs interface (/proc/mutex_log) for viewing logs
+- Export to text and JSON formats
+- Comprehensive statistics tracking
+- Thread-safe with spinlock protection
+- Module parameters for runtime configuration
+
 ## Quick Start
 
 ### Prerequisites
